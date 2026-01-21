@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.17.0'
+          cache: 'npm'
+          cache-dependency-path: runway/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./runway
+        run: npm ci
+
+      - name: Run linter
+        working-directory: ./runway
+        run: npm run lint
+
+      - name: Build project
+        working-directory: ./runway
+        run: npm run build

@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "es2018",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "sourceMap": true,
+    "declaration": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "baseUrl": "src",
+    "outDir": "./dist",
+    "paths": {
+      "@app": ["./app.ts"],
+      "@core/*": ["core/*"],
+      "@components/*": ["components/*"],
+      "@config/*": ["config/*"],
+      "@routes/*": ["routes/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/**/*.ts", "src/**/**/**/*.ts"],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "test/**/*",
+    "ci/**/*",
+    "scripts/**/*",
+    "__mocks__/**/*",
+    "**/node_modules/**/*",
+    "**/dts/**/*",
+    "**/dist/**/*",
+    "**/*.(spec|test).ts"
+  ]
+}
