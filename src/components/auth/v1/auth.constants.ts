@@ -1,0 +1,11 @@
+export const TOKEN_TYPES = {
+  EMAIL_VERIFICATION: 'EMAIL_VERIFICATION',
+  PASSWORD_RESET: 'PASSWORD_RESET',
+  INVITATION: 'INVITATION',
+} as const;
+
+export const TOKEN_EXPIRY = {
+  EMAIL_VERIFICATION: 24 * 60 * 60 * 1000, // 24 hours
+  PASSWORD_RESET: 60 * 60 * 1000, // 1 hour
+  INVITATION: 7 * 24 * 60 * 60 * 1000, // 7 days
+} as const;

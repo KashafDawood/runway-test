@@ -1,0 +1,23 @@
+extends ../baseEmail
+
+block content
+  h4 Hello, #{name}
+  p We received a request to reset your password for your Runway Coach App account.
+  p Click the button below to reset your password:
+  
+  +button(url) Reset Password
+  
+  .divider
+  
+  p If the button doesn't work, you can copy and paste this link into your browser:
+  p(style='word-break: break-all; color: #4F46E5;')= url
+  
+  p This password reset link will expire in 1 hour for security reasons.
+  
+  p If you didn't request a password reset, please ignore this email. Your password will remain unchanged.
+  
+  p For security reasons, we recommend:
+  ul(style='color: #4b5563; margin: 10px 0;')
+    li Never share your password with anyone
+    li Use a strong, unique password
+    li Enable two-factor authentication when available

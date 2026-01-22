@@ -1,0 +1,37 @@
+import { Router } from 'express';
+import * as authController from './auth.controller';
+import validate from '@core/middlewares/validate.middleware';
+import * as authValidation from './auth.validation';
+import { verifyToken } from './auth.middleware';
+
+const router: Router = Router();
+
+// Public routes
+router.post('/signup', validate(authValidation.signUpValidation), authController.signUp);
+
+router.post('/signin', validate(authValidation.signInValidation), authController.signIn);
+
+router.post(
+  '/verify-email',
+  validate(authValidation.verifyEmailValidation),
+  authController.verifyEmail
+);
+
+router.post(
+  '/forgot-password',
+  validate(authValidation.forgotPasswordValidation),
+  authController.forgotPassword
+);
+
+router.post(
+  '/reset-password',
+  validate(authValidation.resetPasswordValidation),
+  authController.resetPassword
+);
+
+// Protected routes
+router.post('/resend-verification', verifyToken, authController.resendVerificationEmail);
+
+router.get('/me', verifyToken, authController.getMe);
+
+export default router;

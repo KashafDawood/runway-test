@@ -9,12 +9,15 @@
     "resolveJsonModule": true,
     "baseUrl": "src",
     "outDir": "./dist",
+    "typeRoots": ["./node_modules/@types", "./src/types"],
     "paths": {
       "@app": ["./app.ts"],
       "@core/*": ["core/*"],
       "@components/*": ["components/*"],
       "@config/*": ["config/*"],
-      "@routes/*": ["routes/*"]
+      "@routes/*": ["routes/*"],
+      "@shared/*": ["shared/*"],
+      "@seeders/*": ["seeders/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/**/*.ts", "src/**/**/**/*.ts"],

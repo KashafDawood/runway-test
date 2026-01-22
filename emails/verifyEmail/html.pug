@@ -1,0 +1,17 @@
+extends ../baseEmail
+
+block content
+  h4 Greetings, #{name}!
+  p Welcome to Runway Coach App! We're excited to have you on board.
+  p To get started, please verify your email address by clicking the button below:
+  
+  +button(url) Verify Email Address
+  
+  .divider
+  
+  p If the button doesn't work, you can copy and paste this link into your browser:
+  p(style='word-break: break-all; color: #4F46E5;')= url
+  
+  p This verification link will expire in 24 hours.
+  
+  p If you didn't create an account with Runway Coach App, please ignore this email.

@@ -4,6 +4,7 @@ import config from '@config/config';
 import logger from '@core/utils/logger';
 import errorHandler from '@core/utils/errorHandler';
 import { db, connectionType } from '@config/db';
+import runAllSeeders from '@seeders/index';
 
 const { port } = config.app;
 
@@ -11,11 +12,18 @@ db.on('error', logger.error.bind(logger, 'MongoDB connection error:'));
 db.on('close', () => {
   logger.info('DB connection is closed');
 });
-db.once('open', () => {
+db.once('open', async () => {
   if (connectionType === 'MongoDB URI') {
     logger.info(`Connected to ${connectionType}`);
   } else {
     logger.warn(`Connected to ${connectionType}`);
+  }
+
+  // Run database seeders
+  try {
+    await runAllSeeders();
+  } catch (error) {
+    logger.error('Failed to run seeders:', error);
   }
 });
 

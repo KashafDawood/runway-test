@@ -22,6 +22,19 @@ const envsSchema = Joi.object()
     MONGO_URI: Joi.string(),
     ORIGIN_REGEX: Joi.string().default('^http://localhost:.*'),
     ALLOWED_ORIGINS: Joi.string().default('http://localhost:3000'),
+    // JWT Configuration
+    JWT_SECRET: Joi.string().required(),
+    JWT_EXPIRES_IN: Joi.string().default('24h'),
+    // Mail Configuration
+    ADMIN_EMAIL: Joi.string().email(),
+    MAIL_HOST: Joi.string().default('smtp.resend.com'),
+    MAIL_PORT: Joi.number().default(465),
+    MAIL_USER: Joi.string(),
+    MAIL_PASS: Joi.string(),
+    MAIL_FROM: Joi.string().default('noreply@runway.team'),
+    // Auth Service Configuration (for future migration)
+    USE_EXTERNAL_AUTH: Joi.string().valid('true', 'false').default('false'),
+    AUTH_SERVICE_URL: Joi.string().default('http://localhost:8000'),
   })
   .unknown(true);
 
@@ -49,5 +62,21 @@ export default {
   },
   db: {
     mongo_uri: envVars.MONGO_URI,
+  },
+  jwt: {
+    secret: envVars.JWT_SECRET,
+    expiresIn: envVars.JWT_EXPIRES_IN,
+  },
+  mail: {
+    host: envVars.MAIL_HOST,
+    port: envVars.MAIL_PORT,
+    user: envVars.MAIL_USER,
+    pass: envVars.MAIL_PASS,
+    from: envVars.MAIL_FROM,
+    adminEmail: envVars.ADMIN_EMAIL || 'admin@runway.team',
+  },
+  auth: {
+    useExternalService: envVars.USE_EXTERNAL_AUTH === 'true',
+    externalServiceUrl: envVars.AUTH_SERVICE_URL,
   },
 };
