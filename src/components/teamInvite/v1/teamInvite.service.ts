@@ -9,7 +9,7 @@ import { Role } from '@components/role/v1/role.model';
 import UserModel from '@components/user/v1/user.model';
 import { RoleName } from '@components/role/v1/role.interface';
 import { UserRoleStatus } from '@components/userRole/v1/userRole.interface';
-import { sendEmail } from '@shared/services/mail';
+import { queueBulkEmails } from '@shared/queues/email.queue';
 import AppError from '@core/utils/appError';
 import httpStatus from 'http-status';
 import logger from '@core/utils/logger';
@@ -50,6 +50,7 @@ interface IBatchInviteResult {
 /**
  * Create batch team invites (up to 20)
  * NO ROLE specified - user chooses when accepting
+ * Optimized: Uses batch DB queries and async email queue
  */
 export const createBatchInvites = async (
   data: ICreateBatchInviteInput
@@ -93,57 +94,80 @@ export const createBatchInvites = async (
     failed: []
   };
 
-  // Process each email
-  for (const email of emails) {
-    const normalizedEmail = email.toLowerCase().trim();
+  // Normalize and validate email format
+  const normalizedEmails = emails.map(e => e.toLowerCase().trim());
+  const validEmails: string[] = [];
+  const invalidEmails: string[] = [];
 
+  for (const email of normalizedEmails) {
+    if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(email)) {
+      invalidEmails.push(email);
+      results.failed.push({
+        email,
+        reason: 'Invalid email format'
+      });
+    } else {
+      validEmails.push(email);
+    }
+  }
+
+  if (validEmails.length === 0) {
+    return results;
+  }
+
+  // OPTIMIZATION: Batch Database Queries (Instead of N queries, use 4 queries)
+
+  // Query 1: Get all existing users at once
+  const existingUsers = await UserModel.find({ email: { $in: validEmails } });
+  const existingUserMap = new Map(existingUsers.map(u => [u.email.toLowerCase(), u]));
+
+  // Query 2: Check all memberships at once
+  const existingUserIds = existingUsers.map(u => u._id);
+  const memberships = await UserRole.find({
+    userId: { $in: existingUserIds },
+    teamId,
+    status: UserRoleStatus.ACTIVE
+  });
+  const membershipMap = new Map(memberships.map(m => [m.userId.toString(), true]));
+
+  // Query 3: Check all pending invites at once
+  const pendingInvites = await TeamInvite.find({
+    teamId,
+    email: { $in: validEmails },
+    status: InviteStatus.PENDING,
+    expiresAt: { $gt: new Date() }
+  });
+  const pendingInviteMap = new Map(pendingInvites.map(i => [i.email, true]));
+
+  // Process emails and collect for batch creation
+  const invitesToCreate: any[] = [];
+  const emailsToQueue: Array<{ to: string; template: string; data: Record<string, any> }> = [];
+
+  for (const email of validEmails) {
     try {
-      // Validate email format
-      if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(normalizedEmail)) {
-        results.failed.push({
-          email: normalizedEmail,
-          reason: 'Invalid email format'
-        });
-        continue;
-      }
-
       // Check if inviter is trying to invite themselves
-      if (inviter.email.toLowerCase() === normalizedEmail) {
+      if (inviter.email.toLowerCase() === email) {
         results.failed.push({
-          email: normalizedEmail,
+          email,
           reason: INVITE_ERRORS.SELF_INVITE
         });
         continue;
       }
 
-      // Check if user already exists and is already a member
-      const existingUser = await UserModel.findOne({ email: normalizedEmail });
-      if (existingUser) {
-        const existingMembership = await UserRole.findOne({
-          userId: existingUser._id,
-          teamId,
-          status: UserRoleStatus.ACTIVE
+      // Check if user exists and is already a member
+      const existingUser = existingUserMap.get(email);
+      if (existingUser && membershipMap.has(existingUser._id.toString())) {
+        results.failed.push({
+          email,
+          reason: INVITE_ERRORS.ALREADY_MEMBER
         });
-        if (existingMembership) {
-          results.failed.push({
-            email: normalizedEmail,
-            reason: INVITE_ERRORS.ALREADY_MEMBER
-          });
-          continue;
-        }
+        continue;
       }
 
-      // Check if pending invite already exists for this email + team
-      const existingInvite = await TeamInvite.findOne({
-        teamId,
-        email: normalizedEmail,
-        status: InviteStatus.PENDING,
-        expiresAt: { $gt: new Date() }
-      });
-
-      if (existingInvite) {
+      // Check if pending invite already exists
+      if (pendingInviteMap.has(email)) {
         results.failed.push({
-          email: normalizedEmail,
+          email,
           reason: INVITE_ERRORS.PENDING_INVITE_EXISTS
         });
         continue;
@@ -153,39 +177,59 @@ export const createBatchInvites = async (
       const token = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date(Date.now() + INVITE_EXPIRY_MS);
 
-      // Create invite (NO ROLE - user will choose)
-      const invite = await TeamInvite.create({
+      // Add to batch creation array
+      invitesToCreate.push({
         teamId,
         invitedBy,
-        email: normalizedEmail,
+        email,
         status: InviteStatus.PENDING,
         token,
         expiresAt
       });
 
-      // Send email
+      // Queue email for async sending
       const inviteUrl = `${config.app.frontEndUrl}/team/invite/accept?token=${token}`;
-
-      try {
-        await sendEmail('teamInvite', normalizedEmail, {
+      emailsToQueue.push({
+        to: email,
+        template: 'teamInvite',
+        data: {
           teamName: team.name,
           inviterName: inviter.name,
           inviteUrl,
           expiresInDays: Math.floor(INVITE_EXPIRY_MS / (24 * 60 * 60 * 1000))
-        });
-      } catch (error) {
-        logger.error(`Failed to send invite email to ${normalizedEmail}`, error);
-        // Don't fail - email can be resent
-      }
-
-      results.success.push(invite);
-      logger.info(`Invite created: ${invite._id} to ${normalizedEmail} for team ${teamId}`);
+        }
+      });
 
     } catch (error: any) {
       results.failed.push({
-        email: normalizedEmail,
-        reason: error.message || 'Failed to create invite'
+        email,
+        reason: error.message || 'Failed to process email'
       });
+    }
+  }
+
+  // Query 4: Create all invites at once
+  if (invitesToCreate.length > 0) {
+    try {
+      const createdInvites = await TeamInvite.insertMany(invitesToCreate);
+      results.success = createdInvites as any;
+
+      logger.info(`Batch invites created: ${createdInvites.length} invites for team ${teamId}`);
+
+      // Queue all emails asynchronously (non-blocking)
+      if (emailsToQueue.length > 0) {
+        queueBulkEmails(emailsToQueue).catch(err => {
+          logger.error('Failed to queue bulk emails', err);
+          // Don't fail the invite creation - emails can be resent
+        });
+      }
+
+    } catch (error: any) {
+      logger.error('Failed to create batch invites', error);
+      throw new AppError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        'Failed to create invites: ' + error.message
+      );
     }
   }
 
