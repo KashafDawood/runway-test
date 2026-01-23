@@ -1,4 +1,4 @@
-import { RoleName } from '../components/role/v1/role.interface';
+import { RoleName } from '@components/role/v1/role.interface';
 
 export enum Resource {
   TEAM = 'team',
