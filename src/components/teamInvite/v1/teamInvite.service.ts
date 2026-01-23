@@ -1,0 +1,419 @@
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+import { Types } from 'mongoose';
+import { TeamInvite } from './teamInvite.model';
+import { InviteStatus, ITeamInvite } from './teamInvite.interface';
+import { Team } from '@components/team/v1/team.model';
+import { UserRole } from '@components/userRole/v1/userRole.model';
+import { Role } from '@components/role/v1/role.model';
+import UserModel from '@components/user/v1/user.model';
+import { RoleName } from '@components/role/v1/role.interface';
+import { UserRoleStatus } from '@components/userRole/v1/userRole.interface';
+import { sendEmail } from '@shared/services/mail';
+import AppError from '@core/utils/appError';
+import httpStatus from 'http-status';
+import logger from '@core/utils/logger';
+import config from '@config/config';
+import { INVITE_EXPIRY_MS, INVITE_ERRORS } from './teamInvite.constants';
+
+interface ICreateBatchInviteInput {
+  teamId: string;
+  invitedBy: string; // Coach user ID
+  emails: string[]; // Array of emails (max 20)
+}
+
+interface ICheckInviteInput {
+  token: string;
+}
+
+interface ICompleteRegistrationInput {
+  token: string;
+  name: string;
+  password: string;
+  phone?: string;
+}
+
+interface IAcceptInviteInput {
+  token: string;
+  role: RoleName; // User chooses role
+  userId?: string; // For existing users (if authenticated)
+}
+
+interface IBatchInviteResult {
+  success: ITeamInvite[];
+  failed: Array<{
+    email: string;
+    reason: string;
+  }>;
+}
+
+/**
+ * Create batch team invites (up to 20)
+ * NO ROLE specified - user chooses when accepting
+ */
+export const createBatchInvites = async (
+  data: ICreateBatchInviteInput
+): Promise<IBatchInviteResult> => {
+  const { teamId, invitedBy, emails } = data;
+
+  // Validate email count
+  if (emails.length === 0) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'At least one email is required');
+  }
+
+  if (emails.length > 20) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Maximum 20 emails allowed per batch');
+  }
+
+  // Verify team exists
+  const team = await Team.findById(teamId);
+  if (!team) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Team not found');
+  }
+
+  // Verify inviter is a coach in this team
+  const inviterRole = await UserRole.findOne({
+    userId: invitedBy,
+    teamId,
+    status: UserRoleStatus.ACTIVE
+  });
+
+  if (!inviterRole || inviterRole.roleName !== RoleName.COACH) {
+    throw new AppError(httpStatus.FORBIDDEN, INVITE_ERRORS.NOT_COACH);
+  }
+
+  // Get inviter details for email
+  const inviter = await UserModel.findById(invitedBy);
+  if (!inviter) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Inviter not found');
+  }
+
+  const results: IBatchInviteResult = {
+    success: [],
+    failed: []
+  };
+
+  // Process each email
+  for (const email of emails) {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    try {
+      // Validate email format
+      if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(normalizedEmail)) {
+        results.failed.push({
+          email: normalizedEmail,
+          reason: 'Invalid email format'
+        });
+        continue;
+      }
+
+      // Check if inviter is trying to invite themselves
+      if (inviter.email.toLowerCase() === normalizedEmail) {
+        results.failed.push({
+          email: normalizedEmail,
+          reason: INVITE_ERRORS.SELF_INVITE
+        });
+        continue;
+      }
+
+      // Check if user already exists and is already a member
+      const existingUser = await UserModel.findOne({ email: normalizedEmail });
+      if (existingUser) {
+        const existingMembership = await UserRole.findOne({
+          userId: existingUser._id,
+          teamId,
+          status: UserRoleStatus.ACTIVE
+        });
+        if (existingMembership) {
+          results.failed.push({
+            email: normalizedEmail,
+            reason: INVITE_ERRORS.ALREADY_MEMBER
+          });
+          continue;
+        }
+      }
+
+      // Check if pending invite already exists for this email + team
+      const existingInvite = await TeamInvite.findOne({
+        teamId,
+        email: normalizedEmail,
+        status: InviteStatus.PENDING,
+        expiresAt: { $gt: new Date() }
+      });
+
+      if (existingInvite) {
+        results.failed.push({
+          email: normalizedEmail,
+          reason: INVITE_ERRORS.PENDING_INVITE_EXISTS
+        });
+        continue;
+      }
+
+      // Generate secure random token
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + INVITE_EXPIRY_MS);
+
+      // Create invite (NO ROLE - user will choose)
+      const invite = await TeamInvite.create({
+        teamId,
+        invitedBy,
+        email: normalizedEmail,
+        status: InviteStatus.PENDING,
+        token,
+        expiresAt
+      });
+
+      // Send email
+      const inviteUrl = `${config.app.frontEndUrl}/team/invite/accept?token=${token}`;
+
+      try {
+        await sendEmail('teamInvite', normalizedEmail, {
+          teamName: team.name,
+          inviterName: inviter.name,
+          inviteUrl,
+          expiresInDays: Math.floor(INVITE_EXPIRY_MS / (24 * 60 * 60 * 1000))
+        });
+      } catch (error) {
+        logger.error(`Failed to send invite email to ${normalizedEmail}`, error);
+        // Don't fail - email can be resent
+      }
+
+      results.success.push(invite);
+      logger.info(`Invite created: ${invite._id} to ${normalizedEmail} for team ${teamId}`);
+
+    } catch (error: any) {
+      results.failed.push({
+        email: normalizedEmail,
+        reason: error.message || 'Failed to create invite'
+      });
+    }
+  }
+
+  return results;
+};
+
+/**
+ * Check invite and determine if user needs to register
+ * PUBLIC endpoint - no auth required
+ */
+export const checkInvite = async (data: ICheckInviteInput): Promise<{
+  invite: ITeamInvite;
+  requiresRegistration: boolean;
+  userExists: boolean;
+}> => {
+  const { token } = data;
+
+  // Find invite by token
+  const invite = await TeamInvite.findOne({ token })
+    .populate('teamId', 'name sport season')
+    .populate('invitedBy', 'name email');
+
+  if (!invite) {
+    throw new AppError(httpStatus.NOT_FOUND, INVITE_ERRORS.NOT_FOUND);
+  }
+
+  // Check if invite is pending
+  if (invite.status !== InviteStatus.PENDING) {
+    if (invite.status === InviteStatus.ACCEPTED) {
+      throw new AppError(httpStatus.CONFLICT, INVITE_ERRORS.ALREADY_ACCEPTED);
+    }
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invite is no longer valid');
+  }
+
+  // Check if invite has expired
+  if (invite.expiresAt < new Date()) {
+    invite.status = InviteStatus.EXPIRED;
+    await invite.save();
+    throw new AppError(httpStatus.GONE, INVITE_ERRORS.EXPIRED);
+  }
+
+  // Check if user exists
+  const existingUser = await UserModel.findOne({ email: invite.email.toLowerCase() });
+  
+  return {
+    invite,
+    requiresRegistration: !existingUser,
+    userExists: !!existingUser
+  };
+};
+
+/**
+ * Complete registration for new user (Step 1 for new users)
+ * Creates user account with email verification
+ * PUBLIC endpoint - no auth required
+ */
+export const completeRegistration = async (
+  data: ICompleteRegistrationInput
+): Promise<{ user: any; token: string }> => {
+  const { token, name, password, phone } = data;
+
+  // Find invite by token
+  const invite = await TeamInvite.findOne({ token });
+
+  if (!invite) {
+    throw new AppError(httpStatus.NOT_FOUND, INVITE_ERRORS.NOT_FOUND);
+  }
+
+  if (invite.status !== InviteStatus.PENDING) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invite is no longer valid');
+  }
+
+  if (invite.expiresAt < new Date()) {
+    invite.status = InviteStatus.EXPIRED;
+    await invite.save();
+    throw new AppError(httpStatus.GONE, INVITE_ERRORS.EXPIRED);
+  }
+
+  // Check if user already exists
+  const existingUser = await UserModel.findOne({ email: invite.email.toLowerCase() });
+  if (existingUser) {
+    throw new AppError(
+      httpStatus.CONFLICT,
+      'User already exists. Please login to accept invite.'
+    );
+  }
+
+  // Hash password
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  // Create user with email verification
+  const user = await UserModel.create({
+    email: invite.email.toLowerCase(),
+    name,
+    password: hashedPassword,
+    email_verified: true, // Auto-verify email
+    phone: phone || undefined
+  });
+
+  logger.info(`User registered via invite: ${user._id} (${user.email})`);
+
+  // Remove password from response
+  const userObj = user.toObject();
+  delete userObj.password;
+
+  return {
+    user: userObj,
+    token // Return token so they can proceed to accept
+  };
+};
+
+/**
+ * Accept team invite with role selection (Step 2 or only step for existing users)
+ * For new users: Must call completeRegistration first
+ * For existing users: Can call directly (but must be authenticated)
+ */
+export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
+  invite: ITeamInvite;
+  user: any;
+  isNewUser: boolean;
+}> => {
+  const { token, role, userId } = data;
+
+  // Find invite by token
+  const invite = await TeamInvite.findOne({ token })
+    .populate('teamId', 'name sport season')
+    .populate('invitedBy', 'name email');
+
+  if (!invite) {
+    throw new AppError(httpStatus.NOT_FOUND, INVITE_ERRORS.NOT_FOUND);
+  }
+
+  // Check if invite is pending
+  if (invite.status !== InviteStatus.PENDING) {
+    if (invite.status === InviteStatus.ACCEPTED) {
+      throw new AppError(httpStatus.CONFLICT, INVITE_ERRORS.ALREADY_ACCEPTED);
+    }
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invite is no longer valid');
+  }
+
+  // Check if invite has expired
+  if (invite.expiresAt < new Date()) {
+    invite.status = InviteStatus.EXPIRED;
+    await invite.save();
+    throw new AppError(httpStatus.GONE, INVITE_ERRORS.EXPIRED);
+  }
+
+  // Validate role
+  const roleDoc = await Role.findOne({ name: role });
+  if (!roleDoc) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid role selected');
+  }
+
+  // Get or find user
+  let user;
+  if (userId) {
+    // Existing authenticated user
+    user = await UserModel.findById(userId);
+    if (!user) {
+      throw new AppError(httpStatus.NOT_FOUND, 'User not found');
+    }
+
+    // Verify email matches
+    if (user.email.toLowerCase() !== invite.email.toLowerCase()) {
+      throw new AppError(
+        httpStatus.FORBIDDEN,
+        'This invite is for a different email address'
+      );
+    }
+  } else {
+    // New user must have completed registration first
+    user = await UserModel.findOne({ email: invite.email.toLowerCase() });
+    if (!user) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Please complete registration first before accepting invite'
+      );
+    }
+  }
+
+  // Check if user is already a member
+  const existingMembership = await UserRole.findOne({
+    userId: user._id,
+    teamId: invite.teamId,
+    status: UserRoleStatus.ACTIVE
+  });
+
+  if (existingMembership) {
+    // Mark invite as accepted anyway
+    invite.status = InviteStatus.ACCEPTED;
+    invite.acceptedBy = new Types.ObjectId(user._id);
+    invite.acceptedRole = role;
+    invite.acceptedAt = new Date();
+    await invite.save();
+
+    throw new AppError(httpStatus.CONFLICT, INVITE_ERRORS.ALREADY_MEMBER);
+  }
+
+  // Create UserRole (add user to team with chosen role)
+  await UserRole.create({
+    userId: user._id,
+    teamId: invite.teamId,
+    roleId: roleDoc._id,
+    roleName: role,
+    status: UserRoleStatus.ACTIVE,
+    invitedBy: invite.invitedBy,
+    invitedAt: invite.createdAt,
+    joinedAt: new Date()
+  });
+
+  // Mark invite as accepted
+  invite.status = InviteStatus.ACCEPTED;
+  invite.acceptedBy = new Types.ObjectId(user._id);
+  invite.acceptedRole = role;
+  invite.acceptedAt = new Date();
+  await invite.save();
+
+  logger.info(
+    `Invite accepted: ${invite._id} by user ${user._id} with role ${role}`
+  );
+
+  // Remove password from response
+  const userObj = user.toObject();
+  delete userObj.password;
+
+  return {
+    invite,
+    user: userObj,
+    isNewUser: !userId // If no userId provided, it's a new user
+  };
+};
