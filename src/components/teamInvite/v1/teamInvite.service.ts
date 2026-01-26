@@ -9,7 +9,7 @@ import { Role } from '@components/role/v1/role.model';
 import UserModel from '@components/user/v1/user.model';
 import { RoleName } from '@components/role/v1/role.interface';
 import { UserRoleStatus } from '@components/userRole/v1/userRole.interface';
-import { queueBulkEmails } from '@shared/queues/email.queue';
+import { sendEmail } from '@shared/services/mail';
 import AppError from '@core/utils/appError';
 import httpStatus from 'http-status';
 import logger from '@core/utils/logger';
@@ -141,7 +141,7 @@ export const createBatchInvites = async (
 
   // Process emails and collect for batch creation
   const invitesToCreate: any[] = [];
-  const emailsToQueue: Array<{ to: string; template: string; data: Record<string, any> }> = [];
+  const emailsToSend: Array<{ to: string; template: string; data: Record<string, any> }> = [];
 
   for (const email of validEmails) {
     try {
@@ -189,7 +189,7 @@ export const createBatchInvites = async (
 
       // Queue email for async sending
       const inviteUrl = `${config.app.frontEndUrl}/team/invite/accept?token=${token}`;
-      emailsToQueue.push({
+      emailsToSend.push({
         to: email,
         template: 'teamInvite',
         data: {
@@ -216,11 +216,17 @@ export const createBatchInvites = async (
 
       logger.info(`Batch invites created: ${createdInvites.length} invites for team ${teamId}`);
 
-      // Queue all emails asynchronously (non-blocking)
-      if (emailsToQueue.length > 0) {
-        queueBulkEmails(emailsToQueue).catch(err => {
-          logger.error('Failed to queue bulk emails', err);
-          // Don't fail the invite creation - emails can be resent
+      // Send all emails in parallel (non-blocking) with per-email error capture
+      if (emailsToSend.length > 0) {
+        Promise.allSettled(
+          emailsToSend.map((email) =>
+            sendEmail(email.template, email.to, email.data).catch((error) => {
+              logger.error(`Failed to send invite email to ${email.to}: ${error.message}`);
+              return null;
+            })
+          )
+        ).catch((err) => {
+          logger.error('Unexpected error sending invite emails', err);
         });
       }
 

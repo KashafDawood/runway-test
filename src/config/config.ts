@@ -32,10 +32,6 @@ const envsSchema = Joi.object()
     MAIL_USER: Joi.string(),
     MAIL_PASS: Joi.string(),
     MAIL_FROM: Joi.string().default('noreply@runway.team'),
-    // Redis Configuration
-    REDIS_HOST: Joi.string().default('localhost'),
-    REDIS_PORT: Joi.number().default(6379),
-    REDIS_PASSWORD: Joi.string().optional(),
     // Auth Service Configuration (for future migration)
     USE_EXTERNAL_AUTH: Joi.string().valid('true', 'false').default('false'),
     AUTH_SERVICE_URL: Joi.string().default('http://localhost:8000'),
@@ -78,11 +74,6 @@ export default {
     pass: envVars.MAIL_PASS,
     from: envVars.MAIL_FROM,
     adminEmail: envVars.ADMIN_EMAIL || 'admin@runway.team',
-  },
-  redis: {
-    host: envVars.REDIS_HOST,
-    port: envVars.REDIS_PORT,
-    password: envVars.REDIS_PASSWORD,
   },
   auth: {
     useExternalService: envVars.USE_EXTERNAL_AUTH === 'true',
