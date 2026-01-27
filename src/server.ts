@@ -5,6 +5,7 @@ import logger from '@core/utils/logger';
 import errorHandler from '@core/utils/errorHandler';
 import { db, connectionType } from '@config/db';
 import runAllSeeders from '@seeders/index';
+import { TeamChatGateway } from '@components/teamChat/v1/teamChat.gateway';
 
 const { port } = config.app;
 
@@ -29,8 +30,12 @@ db.once('open', async () => {
 
 export const server = http.createServer(app);
 
+// Initialize Socket.IO for team chat
+export const teamChatGateway = new TeamChatGateway(server);
+
 server.listen(port, (): void => {
   logger.info(`Application listens on PORT: ${port}`);
+  logger.info('Socket.IO server initialized for team chat');
 });
 
 const exitHandler = (): void => {
