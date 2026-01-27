@@ -467,3 +467,109 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     isNewUser: !userId // If no userId provided, it's a new user
   };
 };
+
+/**
+ * Get all invites for a team (for coaches to see)
+ */
+export const getTeamInvites = async (
+  teamId: string,
+  userId: string
+): Promise<ITeamInvite[]> => {
+  // Verify user is coach
+  const userRole = await UserRole.findOne({
+    userId,
+    teamId,
+    status: UserRoleStatus.ACTIVE
+  });
+
+  if (!userRole || userRole.roleName !== RoleName.COACH) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Only coaches can view invites');
+  }
+
+  const invites = await TeamInvite.find({ teamId })
+    .populate('invitedBy', 'name email')
+    .populate('acceptedBy', 'name email')
+    .sort({ createdAt: -1 });
+
+  return invites;
+};
+
+/**
+ * Cancel/revoke an invite (before it's accepted)
+ */
+export const cancelInvite = async (
+  inviteId: string,
+  userId: string
+): Promise<void> => {
+  const invite = await TeamInvite.findById(inviteId);
+
+  if (!invite) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Invite not found');
+  }
+
+  // Verify user is coach in team
+  const userRole = await UserRole.findOne({
+    userId,
+    teamId: invite.teamId,
+    status: UserRoleStatus.ACTIVE
+  });
+
+  if (!userRole || userRole.roleName !== RoleName.COACH) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Only coaches can cancel invites');
+  }
+
+  if (invite.status !== InviteStatus.PENDING) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Can only cancel pending invites');
+  }
+
+  invite.status = InviteStatus.CANCELLED;
+  await invite.save();
+
+  logger.info(`Invite cancelled: ${inviteId} by user ${userId}`);
+};
+
+/**
+ * Resend invite email
+ */
+export const resendInvite = async (
+  inviteId: string,
+  userId: string
+): Promise<void> => {
+  const invite = await TeamInvite.findById(inviteId)
+    .populate('teamId', 'name')
+    .populate('invitedBy', 'name');
+
+  if (!invite) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Invite not found');
+  }
+
+  // Verify user is coach
+  const userRole = await UserRole.findOne({
+    userId,
+    teamId: invite.teamId,
+    status: UserRoleStatus.ACTIVE
+  });
+
+  if (!userRole || userRole.roleName !== RoleName.COACH) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Only coaches can resend invites');
+  }
+
+  if (invite.status !== InviteStatus.PENDING) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Can only resend pending invites');
+  }
+
+  if (invite.expiresAt < new Date()) {
+    throw new AppError(httpStatus.GONE, 'Invite has expired');
+  }
+
+  const inviteUrl = `${config.app.frontEndUrl}/team/invite/accept?token=${invite.token}`;
+
+  await sendEmail('teamInvite', invite.email, {
+    teamName: (invite.teamId as any).name,
+    inviterName: (invite.invitedBy as any).name,
+    inviteUrl,
+    expiresInDays: Math.floor((invite.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+  });
+
+  logger.info(`Invite resent: ${inviteId}`);
+};

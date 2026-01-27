@@ -68,5 +68,46 @@ router.post(
   validate(teamInviteValidation.acceptInviteSchema),
   teamInviteController.acceptInvite
 );
+/**
+ * GET TEAM INVITES
+ * GET /api/v1/team-invites/:teamId/invites
+ * 
+ * Coach only - view all invites for team
+ */
+router.get(
+  '/:teamId/invites',
+  verifyToken,
+  requireEmailVerified,
+  extractTeamContext,
+  requireTeamAdmin,
+  teamInviteController.getTeamInvites
+);
 
+/**
+ * CANCEL INVITE
+ * DELETE /api/v1/team-invites/:inviteId
+ * 
+ * Coach only - cancel pending invite
+ */
+router.delete(
+  '/:inviteId',
+  verifyToken,
+  requireEmailVerified,
+  validate(teamInviteValidation.cancelInviteSchema),
+  teamInviteController.cancelInvite
+);
+
+/**
+ * RESEND INVITE
+ * POST /api/v1/team-invites/:inviteId/resend
+ * 
+ * Coach only - resend invite email
+ */
+router.post(
+  '/:inviteId/resend',
+  verifyToken,
+  requireEmailVerified,
+  validate(teamInviteValidation.cancelInviteSchema),
+  teamInviteController.resendInvite
+);
 export default router;

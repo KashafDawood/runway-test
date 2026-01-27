@@ -95,3 +95,63 @@ export const acceptInvite = asyncWrapper(async (req: Request, res: Response) => 
     data: result
   });
 });
+
+/**
+ * GET /api/v1/teams/:teamId/invites
+ * Get all invites for team
+ */
+export const getTeamInvites = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  const { teamId } = req.params;
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
+
+  const invites = await teamInviteService.getTeamInvites(teamId, userId);
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: invites
+  });
+});
+
+/**
+ * DELETE /api/v1/team-invites/:inviteId
+ * Cancel invite
+ */
+export const cancelInvite = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  const { inviteId } = req.params;
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
+
+  await teamInviteService.cancelInvite(inviteId, userId);
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    message: 'Invite cancelled successfully'
+  });
+});
+
+/**
+ * POST /api/v1/team-invites/:inviteId/resend
+ * Resend invite email
+ */
+export const resendInvite = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  const { inviteId } = req.params;
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
+
+  await teamInviteService.resendInvite(inviteId, userId);
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    message: 'Invite resent successfully'
+  });
+});

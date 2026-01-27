@@ -1,13 +1,13 @@
-import { UserRole } from '../../components/userRole/v1/userRole.model';
-import { GuardianLink } from '../../components/guardianLink/v1/guardianLink.model';
-import { RoleName } from '../../components/role/v1/role.interface';
-import { GuardianLinkStatus } from '../../components/guardianLink/v1/guardianLink.interface';
+import { UserRole } from "../../components/userRole/v1/userRole.model";
+import { GuardianLink } from "../../components/guardianLink/v1/guardianLink.model";
+import { RoleName } from "../../components/role/v1/role.interface";
+import { GuardianLinkStatus } from "../../components/guardianLink/v1/guardianLink.interface";
 import {
   Resource,
   Action,
   PermissionContext,
-  PermissionResult
-} from '../types/permission.types';
+  PermissionResult,
+} from "../types/permission.types";
 
 export class PermissionService {
   /**
@@ -22,7 +22,7 @@ export class PermissionService {
     if (!userRole) {
       return {
         allowed: false,
-        reason: 'User is not a member of this team'
+        reason: "User is not a member of this team",
       };
     }
 
@@ -60,7 +60,7 @@ export class PermissionService {
         return this.checkPlayerPermission(context, userRole, isAdmin);
 
       default:
-        return { allowed: false, reason: 'Unknown resource' };
+        return { allowed: false, reason: "Unknown resource" };
     }
   }
 
@@ -69,13 +69,13 @@ export class PermissionService {
    */
   private async getUserRoleInTeam(
     userId: string,
-    teamId: string
+    teamId: string,
   ): Promise<RoleName | null> {
     const userRole = await UserRole.findOne({
       userId,
       teamId,
-      status: 'active'
-    }).select('roleName');
+      status: "active",
+    }).select("roleName");
 
     return userRole ? userRole.roleName : null;
   }
@@ -86,13 +86,13 @@ export class PermissionService {
   private async isGuardianOfPlayer(
     guardianId: string,
     playerId: string,
-    teamId: string
+    teamId: string,
   ): Promise<boolean> {
     const link = await GuardianLink.findOne({
       guardianId,
       playerId,
       teamId,
-      status: GuardianLinkStatus.APPROVED
+      status: GuardianLinkStatus.APPROVED,
     });
 
     return !!link;
@@ -103,7 +103,7 @@ export class PermissionService {
   private checkTeamPermission(
     context: PermissionContext,
     userRole: RoleName,
-    isAdmin: boolean
+    isAdmin: boolean,
   ): PermissionResult {
     const { action, resourceOwnerId, userId } = context;
 
@@ -126,7 +126,7 @@ export class PermissionService {
         // Only creator can delete
         return {
           allowed: resourceOwnerId === userId,
-          reason: 'Only team creator can delete'
+          reason: "Only team creator can delete",
         };
 
       case Action.MANAGE:
@@ -140,7 +140,7 @@ export class PermissionService {
   private checkChatPermission(
     context: PermissionContext,
     userRole: RoleName,
-    isAdmin: boolean
+    isAdmin: boolean,
   ): PermissionResult {
     const { action, resourceOwnerId, userId } = context;
 
@@ -155,7 +155,7 @@ export class PermissionService {
       case Action.DELETE:
         // Admins can delete any, users can delete own
         return {
-          allowed: isAdmin || resourceOwnerId === userId
+          allowed: isAdmin || resourceOwnerId === userId,
         };
 
       default:
@@ -166,7 +166,7 @@ export class PermissionService {
   private checkEventPermission(
     context: PermissionContext,
     userRole: RoleName,
-    isAdmin: boolean
+    isAdmin: boolean,
   ): PermissionResult {
     const { action } = context;
 
@@ -187,7 +187,7 @@ export class PermissionService {
   private async checkRSVPPermission(
     context: PermissionContext,
     userRole: RoleName,
-    isAdmin: boolean
+    isAdmin: boolean,
   ): Promise<PermissionResult> {
     const { action, targetUserId, playerId, userId, teamId } = context;
 
@@ -200,7 +200,7 @@ export class PermissionService {
           const isGuardian = await this.isGuardianOfPlayer(
             userId,
             playerId,
-            teamId
+            teamId,
           );
           return { allowed: isGuardian };
         }
@@ -215,7 +215,7 @@ export class PermissionService {
           const isGuardian = await this.isGuardianOfPlayer(
             userId,
             playerId,
-            teamId
+            teamId,
           );
           return { allowed: isGuardian };
         }
@@ -229,7 +229,7 @@ export class PermissionService {
   private async checkAttendancePermission(
     context: PermissionContext,
     userRole: RoleName,
-    isAdmin: boolean
+    isAdmin: boolean,
   ): Promise<PermissionResult> {
     const { action, targetUserId, playerId, userId, teamId } = context;
 
@@ -244,7 +244,7 @@ export class PermissionService {
           const isGuardian = await this.isGuardianOfPlayer(
             userId,
             playerId,
-            teamId
+            teamId,
           );
           return { allowed: isGuardian };
         }
@@ -263,7 +263,7 @@ export class PermissionService {
   private async checkGameNotePermission(
     context: PermissionContext,
     userRole: RoleName,
-    isAdmin: boolean
+    isAdmin: boolean,
   ): Promise<PermissionResult> {
     const { action, playerId, userId, teamId } = context;
 
@@ -281,7 +281,7 @@ export class PermissionService {
           const isGuardian = await this.isGuardianOfPlayer(
             userId,
             playerId,
-            teamId
+            teamId,
           );
           return { allowed: isGuardian };
         }
@@ -301,7 +301,7 @@ export class PermissionService {
   private async checkPaymentPermission(
     context: PermissionContext,
     userRole: RoleName,
-    isAdmin: boolean
+    isAdmin: boolean,
   ): Promise<PermissionResult> {
     const { action, playerId, userId, teamId } = context;
 
@@ -316,7 +316,7 @@ export class PermissionService {
           const isGuardian = await this.isGuardianOfPlayer(
             userId,
             playerId,
-            teamId
+            teamId,
           );
           return { allowed: isGuardian };
         }
@@ -333,7 +333,7 @@ export class PermissionService {
           const isGuardian = await this.isGuardianOfPlayer(
             userId,
             playerId,
-            teamId
+            teamId,
           );
           return { allowed: isGuardian };
         }
@@ -350,7 +350,7 @@ export class PermissionService {
   private async checkGuardianLinkPermission(
     context: PermissionContext,
     userRole: RoleName,
-    isAdmin: boolean
+    isAdmin: boolean,
   ): Promise<PermissionResult> {
     const { action, targetUserId, userId } = context;
 
@@ -386,7 +386,7 @@ export class PermissionService {
   private checkPlayerPermission(
     context: PermissionContext,
     userRole: RoleName,
-    isAdmin: boolean
+    isAdmin: boolean,
   ): PermissionResult {
     const { action } = context;
 
