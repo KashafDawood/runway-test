@@ -33,44 +33,6 @@ export const checkInviteSchema: ValidationSchema = {
   })
 };
 
-export const completeRegistrationSchema: ValidationSchema = {
-  body: Joi.object({
-    token: Joi.string()
-      .required()
-      .length(64)
-      .messages({
-        'string.empty': 'Token is required',
-        'string.length': 'Invalid token format'
-      }),
-    name: Joi.string()
-      .trim()
-      .min(2)
-      .max(100)
-      .required()
-      .messages({
-        'string.empty': 'Name is required',
-        'string.min': 'Name must be at least 2 characters',
-        'string.max': 'Name cannot exceed 100 characters',
-        'any.required': 'Name is required'
-      }),
-    password: Joi.string()
-      .min(8)
-      .required()
-      .messages({
-        'string.empty': 'Password is required',
-        'string.min': 'Password must be at least 8 characters',
-        'any.required': 'Password is required'
-      }),
-    phone: Joi.string()
-      .trim()
-      .max(20)
-      .optional()
-      .messages({
-        'string.max': 'Phone cannot exceed 20 characters'
-      })
-  })
-};
-
 export const acceptInviteSchema: ValidationSchema = {
   body: Joi.object({
     token: Joi.string()
@@ -86,6 +48,34 @@ export const acceptInviteSchema: ValidationSchema = {
       .messages({
         'any.only': `Role must be one of: ${Object.values(RoleName).join(', ')}`,
         'any.required': 'Role is required'
+      }),
+    userData: Joi.object({
+      name: Joi.string()
+        .trim()
+        .min(2)
+        .max(100)
+        .optional()
+        .messages({
+          'string.min': 'Name must be at least 2 characters',
+          'string.max': 'Name cannot exceed 100 characters'
+        }),
+      password: Joi.string()
+        .min(8)
+        .optional()
+        .messages({
+          'string.min': 'Password must be at least 8 characters'
+        }),
+      phone: Joi.string()
+        .trim()
+        .max(20)
+        .optional()
+        .messages({
+          'string.max': 'Phone cannot exceed 20 characters'
+        })
+    })
+      .optional()
+      .messages({
+        'object.base': 'userData must be an object'
       })
   })
 };

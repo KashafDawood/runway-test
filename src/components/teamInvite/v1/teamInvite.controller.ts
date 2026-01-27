@@ -51,40 +51,20 @@ export const checkInvite = asyncWrapper(async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/v1/team-invites/register
- * Complete registration for new user (Step 1)
- * PUBLIC - no auth required
- */
-export const completeRegistration = asyncWrapper(async (req: Request, res: Response) => {
-  const { token, name, password, phone } = req.body;
-
-  const result = await teamInviteService.completeRegistration({
-    token,
-    name,
-    password,
-    phone
-  });
-
-  res.status(httpStatus.CREATED).json({
-    success: true,
-    message: 'Registration completed successfully',
-    data: result
-  });
-});
-
-/**
  * POST /api/v1/team-invites/accept
- * Accept team invite with role selection (Step 2 or only step)
+ * Accept team invite with role selection
+ * Auto-registers user if they don't exist (with optional userData)
  * Can be called with or without authentication
  */
 export const acceptInvite = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id; // Optional - for existing users
-  const { token, role } = req.body;
+  const { token, role, userData } = req.body;
 
   const result = await teamInviteService.acceptInvite({
     token,
     role,
-    userId
+    userId,
+    userData
   });
 
   res.status(httpStatus.OK).json({

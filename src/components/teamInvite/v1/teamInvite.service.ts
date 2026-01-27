@@ -37,6 +37,11 @@ interface IAcceptInviteInput {
   token: string;
   role: RoleName; // User chooses role
   userId?: string; // For existing users (if authenticated)
+  userData?: {
+    name?: string;
+    password?: string;
+    phone?: string;
+  }; // Optional user data for auto-registration
 }
 
 interface IBatchInviteResult {
@@ -288,68 +293,8 @@ export const checkInvite = async (data: ICheckInviteInput): Promise<{
 };
 
 /**
- * Complete registration for new user (Step 1 for new users)
- * Creates user account with email verification
- * PUBLIC endpoint - no auth required
- */
-export const completeRegistration = async (
-  data: ICompleteRegistrationInput
-): Promise<{ user: any; token: string }> => {
-  const { token, name, password, phone } = data;
-
-  // Find invite by token
-  const invite = await TeamInvite.findOne({ token });
-
-  if (!invite) {
-    throw new AppError(httpStatus.NOT_FOUND, INVITE_ERRORS.NOT_FOUND);
-  }
-
-  if (invite.status !== InviteStatus.PENDING) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Invite is no longer valid');
-  }
-
-  if (invite.expiresAt < new Date()) {
-    invite.status = InviteStatus.EXPIRED;
-    await invite.save();
-    throw new AppError(httpStatus.GONE, INVITE_ERRORS.EXPIRED);
-  }
-
-  // Check if user already exists
-  const existingUser = await UserModel.findOne({ email: invite.email.toLowerCase() });
-  if (existingUser) {
-    throw new AppError(
-      httpStatus.CONFLICT,
-      'User already exists. Please login to accept invite.'
-    );
-  }
-
-  // Hash password
-  const hashedPassword = await bcrypt.hash(password, 10);
-
-  // Create user with email verification
-  const user = await UserModel.create({
-    email: invite.email.toLowerCase(),
-    name,
-    password: hashedPassword,
-    email_verified: true, // Auto-verify email
-    phone: phone || undefined
-  });
-
-  logger.info(`User registered via invite: ${user._id} (${user.email})`);
-
-  // Remove password from response
-  const userObj = user.toObject();
-  delete userObj.password;
-
-  return {
-    user: userObj,
-    token // Return token so they can proceed to accept
-  };
-};
-
-/**
- * Accept team invite with role selection (Step 2 or only step for existing users)
- * For new users: Must call completeRegistration first
+ * Accept team invite with role selection
+ * Auto-registers user if they don't exist (with optional userData)
  * For existing users: Can call directly (but must be authenticated)
  */
 export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
@@ -357,7 +302,7 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
   user: any;
   isNewUser: boolean;
 }> => {
-  const { token, role, userId } = data;
+  const { token, role, userId, userData } = data;
 
   // Find invite by token
   const invite = await TeamInvite.findOne({ token })
@@ -389,8 +334,10 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid role selected');
   }
 
-  // Get or find user
+  // Get or find user, auto-register if needed
   let user;
+  let isNewUser = false;
+
   if (userId) {
     // Existing authenticated user
     user = await UserModel.findById(userId);
@@ -405,14 +352,72 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
         'This invite is for a different email address'
       );
     }
+
+    // Optionally update profile data if provided
+    let needsSave = false;
+    if (userData?.name && !user.name) {
+      user.name = userData.name;
+      needsSave = true;
+    }
+    if (userData?.phone && !user.phone) {
+      user.phone = userData.phone;
+      needsSave = true;
+    }
+    
+    // Ensure email is verified
+    if (!user.email_verified) {
+      user.email_verified = true;
+      needsSave = true;
+    }
+
+    if (needsSave) {
+      await user.save();
+    }
   } else {
-    // New user must have completed registration first
+    // Check if user exists
     user = await UserModel.findOne({ email: invite.email.toLowerCase() });
+    
     if (!user) {
-      throw new AppError(
-        httpStatus.BAD_REQUEST,
-        'Please complete registration first before accepting invite'
-      );
+      // AUTO-REGISTER: Create user if they don't exist
+      isNewUser = true;
+
+      // Generate random password if not provided (user can reset later)
+      const passwordToUse = userData?.password || crypto.randomBytes(16).toString('hex');
+      const hashedPassword = await bcrypt.hash(passwordToUse, 10);
+
+      // Use provided name or default to email prefix
+      const userName = userData?.name || invite.email.split('@')[0];
+
+      user = await UserModel.create({
+        email: invite.email.toLowerCase(),
+        name: userName,
+        password: hashedPassword,
+        email_verified: true, // Auto-verify email via invite
+        phone: userData?.phone || undefined
+      });
+
+      logger.info(`Auto-registered user: ${user._id} (${user.email}) via team invite`);
+    } else {
+      // EXISTING USER: Optionally update profile data
+      let needsSave = false;
+      if (userData?.name && !user.name) {
+        user.name = userData.name;
+        needsSave = true;
+      }
+      if (userData?.phone && !user.phone) {
+        user.phone = userData.phone;
+        needsSave = true;
+      }
+      
+      // Ensure email is verified (in case it wasn't before)
+      if (!user.email_verified) {
+        user.email_verified = true;
+        needsSave = true;
+      }
+
+      if (needsSave) {
+        await user.save();
+      }
     }
   }
 
@@ -454,7 +459,7 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
   await invite.save();
 
   logger.info(
-    `Invite accepted: ${invite._id} by user ${user._id} with role ${role}`
+    `Invite accepted: ${invite._id} by user ${user._id} (${isNewUser ? 'NEW' : 'EXISTING'}) with role ${role}`
   );
 
   // Remove password from response
@@ -464,7 +469,7 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
   return {
     invite,
     user: userObj,
-    isNewUser: !userId // If no userId provided, it's a new user
+    isNewUser
   };
 };
 
