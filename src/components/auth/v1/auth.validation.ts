@@ -66,3 +66,12 @@ export const resetPasswordValidation: ValidationSchema = {
     }),
   }),
 };
+
+export const setActiveTeamValidation: ValidationSchema = {
+  body: Joi.object().keys({
+    teamId: Joi.string().required().messages({
+      'any.required': 'Team ID is required',
+      'string.base': 'Team ID must be a string',
+    }),
+  }),
+};

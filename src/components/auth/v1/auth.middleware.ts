@@ -62,7 +62,16 @@ export const requireEmailVerified = asyncWrapper(
  */
 export const extractTeamContext = asyncWrapper(
   async (req: Request, res: Response, next: NextFunction) => {
-    const teamId = req.params.teamId || req.query.teamId || req.body.teamId;
+    let teamId = req.params.teamId || req.query.teamId || req.body.teamId;
+
+    // if teamid is not provided in the requrest fallback to active team id
+    if (!teamId && req.user){
+      // reload the user to get the latest active team id
+      const user = await UserModel.findById(req.user._id);
+      if (user?.activeTeamId) {
+        teamId = user.activeTeamId.toString();
+      }
+    }
 
     if (!teamId) {
       throw new AppError(
@@ -73,6 +82,53 @@ export const extractTeamContext = asyncWrapper(
 
     // Attach teamId to request for easy access
     (req as any).teamId = teamId as string;
+
+    next();
+  },
+);
+
+/**
+ * Use active team context if no teamId provided in request
+ * Optional middleware that sets teamId from user's activeTeamId
+ * Does not throw error if activeTeamId is not set (unlike extractTeamContext)
+ */
+export const useActiveTeamContext = asyncWrapper(
+  async (req: Request, res: Response, next: NextFunction) => {
+    // only set if team id not already in request
+    if (!(req as any).teamId && req.user ) {
+      const user = await UserModel.findById(req.user._id).select('activeTeamId');
+      if (user?.activeTeamId) {
+        (req as any).teamId = user.activeTeamId.toString();
+      }
+    }
+    next();
+  },
+)
+
+/**
+ * Require that user has an active team set
+ * Throws error if user has no activeTeamId
+ */
+export const requireActiveTeam = asyncWrapper(
+  async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      throw new AppError(httpStatus.UNAUTHORIZED, "Authentication required");
+    }
+
+    // Reload user to get latest activeTeamId
+    const user = await UserModel.findById(req.user._id).select('activeTeamId');
+    
+    if (!user?.activeTeamId) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        "No active team set. Please set an active team first.",
+      );
+    }
+
+    // Set teamId from active team if not already set
+    if (!(req as any).teamId) {
+      (req as any).teamId = String(user.activeTeamId);
+    }
 
     next();
   },

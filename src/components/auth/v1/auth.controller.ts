@@ -108,3 +108,37 @@ export const getMe = asyncWrapper(async (req: Request, res: Response) => {
     },
   });
 });
+
+export const getActiveTeam = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Unauthorized');
+  }
+
+  const activeTeam = await authService.getActiveTeam(userId);
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: activeTeam,
+  });
+});
+
+export const setActiveTeam = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  const { teamId } = req.body;
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Unauthorized');
+  }
+
+  const activeTeam = await authService.setActiveTeam(userId, teamId);
+
+  logger.info(`User ${userId} set active team to ${teamId}`);
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    message: 'Active team updated successfully',
+    data: activeTeam,
+  });
+});

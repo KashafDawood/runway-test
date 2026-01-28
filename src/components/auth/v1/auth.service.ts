@@ -348,3 +348,86 @@ export const getUserProfile = async (userId: string): Promise<IUser> => {
 
   return user;
 };
+
+/**
+ * Get user's active team (with membership validation)
+ */
+export const getActiveTeam = async (userId: string) => {
+  const user = await UserModel.findById(userId)
+    .select('activeTeamId')
+    .populate('activeTeamId', 'name sport season');
+
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, 'User not found');
+  }
+
+  if (!user.activeTeamId) {
+    return null;
+  }
+
+  // Verify user is still an active member of this team
+  const userRole = await UserRole.findOne({
+    userId: user._id,
+    teamId: user.activeTeamId,
+    status: UserRoleStatus.ACTIVE,
+  });
+
+  if (!userRole) {
+    // User is no longer a member of the active team, clear it
+    await UserModel.findByIdAndUpdate(userId, { activeTeamId: null });
+    return null;
+  }
+
+  const teamDoc = user.activeTeamId as any;
+
+  return {
+    id: teamDoc._id,
+    name: teamDoc.name,
+    sport: teamDoc.sport,
+    season: teamDoc.season,
+    role: userRole.roleName,
+  };
+};
+
+/**
+ * Set user's active team
+ * Validates that user is an active member of the team before setting
+ */
+export const setActiveTeam = async (userId: string, teamId: string) => {
+  // Verify user exists
+  const user = await UserModel.findById(userId);
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, 'User not found');
+  }
+
+  // Verify team exists
+  const team = await Team.findById(teamId);
+  if (!team) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Team not found');
+  }
+
+  // Verify user is an active member of this team
+  const userRole = await UserRole.findOne({
+    userId: user._id,
+    teamId,
+    status: UserRoleStatus.ACTIVE,
+  });
+
+  if (!userRole) {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      'You are not a member of this team',
+    );
+  }
+
+  // Update user's active team
+  await UserModel.findByIdAndUpdate(userId, { activeTeamId: teamId });
+
+  return {
+    id: team._id,
+    name: team.name,
+    sport: team.sport,
+    season: team.season,
+    role: userRole.roleName,
+  };
+};

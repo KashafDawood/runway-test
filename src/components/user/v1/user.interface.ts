@@ -1,4 +1,4 @@
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export interface IUser extends Document {
   _id: string;
@@ -8,6 +8,9 @@ export interface IUser extends Document {
   email_verified: boolean;
   avatar?: string;
   phone?: string;
+  
+  // active team id
+  activeTeamId?: Types.ObjectId | null | undefined;
   
   // For external auth service migration
   authServiceId?: string;

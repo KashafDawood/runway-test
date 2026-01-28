@@ -43,6 +43,12 @@ const userSchema = new Schema<IUser>(
       default: null,
       index: true,
     },
+    activeTeamId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Team',
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: {

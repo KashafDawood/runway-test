@@ -2,7 +2,7 @@ import { Router } from 'express';
 import * as authController from './auth.controller';
 import validate from '@core/middlewares/validate.middleware';
 import * as authValidation from './auth.validation';
-import { verifyToken } from './auth.middleware';
+import { verifyToken, requireEmailVerified } from './auth.middleware';
 
 const router: Router = Router();
 
@@ -33,5 +33,21 @@ router.post(
 router.post('/resend-verification', verifyToken, authController.resendVerificationEmail);
 
 router.get('/me', verifyToken, authController.getMe);
+
+// Active team routes
+router.get(
+  '/active-team',
+  verifyToken,
+  requireEmailVerified,
+  authController.getActiveTeam,
+);
+
+router.post(
+  '/active-team',
+  verifyToken,
+  requireEmailVerified,
+  validate(authValidation.setActiveTeamValidation),
+  authController.setActiveTeam,
+);
 
 export default router;
