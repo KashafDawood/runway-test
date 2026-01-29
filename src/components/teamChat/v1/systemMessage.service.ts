@@ -15,6 +15,10 @@ function getSystemMessageText(
       return payload?.title
         ? `Event created: ${String(payload.title)}`
         : 'Event created';
+    case SystemEventKind.EVENT_UPDATED:
+      return payload?.title
+        ? `Event updated: ${String(payload.title)}`
+        : 'Event updated';
     case SystemEventKind.PAYMENT_REQUEST_CREATED:
       return 'Payment request created';
     case SystemEventKind.GAME_NOTES_PUBLISHED:

@@ -11,6 +11,7 @@ export enum TeamMessageType {
  */
 export enum SystemEventKind {
   EVENT_CREATED = 'event_created',
+  EVENT_UPDATED = 'event_updated',
   PAYMENT_REQUEST_CREATED = 'payment_request_created',
   GAME_NOTES_PUBLISHED = 'game_notes_published'
 }
