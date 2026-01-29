@@ -1,6 +1,9 @@
 import Joi from 'joi';
 import { ValidationSchema } from '@core/middlewares/validate.middleware';
+import { SystemEventKind } from './teamChat.interface';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './teamChat.service';
+
+const systemEventKindValues = Object.values(SystemEventKind) as string[];
 
 export const createMessageSchema: ValidationSchema = {
   body: Joi.object({
@@ -26,6 +29,21 @@ export const getMessagesSchema: ValidationSchema = {
       .default(DEFAULT_PAGE_SIZE),
     before: Joi.date().iso().optional(),
     after: Joi.date().iso().optional()
+  })
+};
+
+/**
+ * Stub endpoint: POST /teams/:teamId/chat/system-messages (admin only)
+ */
+export const postSystemMessageSchema: ValidationSchema = {
+  body: Joi.object({
+    eventKind: Joi.string()
+      .valid(...systemEventKindValues)
+      .required()
+      .messages({
+        'any.only': `eventKind must be one of: ${systemEventKindValues.join(', ')}`
+      }),
+    payload: Joi.object().unknown(true).optional()
   })
 };
 

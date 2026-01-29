@@ -13,6 +13,6 @@ router.use('/auth', auth);
 router.use('/teams', teamRouter);
 router.use('/team-invites', teamInviteRouter);
 router.use('/user-roles', userRoleRouter);
-router.use('/teams', teamChatRouter);
+router.use('/teams-chat', teamChatRouter);
 
 export default router;
