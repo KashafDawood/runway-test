@@ -9,6 +9,7 @@ import { Role } from '@components/role/v1/role.model';
 import UserModel from '@components/user/v1/user.model';
 import { RoleName } from '@components/role/v1/role.interface';
 import { UserRoleStatus } from '@components/userRole/v1/userRole.interface';
+import { Player } from '@components/player/v1/player.model';
 import { sendEmail } from '@shared/services/mail';
 import AppError from '@core/utils/appError';
 import httpStatus from 'http-status';
@@ -450,6 +451,22 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     invitedAt: invite.createdAt,
     joinedAt: new Date()
   });
+
+  // When user accepts as PLAYER, create a roster (Player) record linked to their account so RSVP and other per-player features work
+  if (role === RoleName.PLAYER) {
+    const nameParts = (user.name || user.email?.split('@')[0] || 'Player').trim().split(/\s+/);
+    const firstName = nameParts[0] || 'Player';
+    const lastName = nameParts.slice(1).join(' ') || ' ';
+    await Player.create({
+      userId: user._id,
+      teamId: invite.teamId,
+      firstName,
+      lastName,
+      hasEmail: true,
+      createdBy: invite.invitedBy
+    });
+    logger.info(`Created roster (Player) record for user ${user._id} on team ${invite.teamId}`);
+  }
 
   // Mark invite as accepted
   invite.status = InviteStatus.ACCEPTED;

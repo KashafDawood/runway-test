@@ -3,9 +3,13 @@ import httpStatus from 'http-status';
 import asyncWrapper from '@core/utils/asyncWrapper';
 import AppError from '@core/utils/appError';
 import * as eventService from './event.service';
+import * as rsvpService from './rsvp.service';
 import { postSystemMessage } from '@components/teamChat/v1/systemMessage.service';
 import { SystemEventKind } from '@components/teamChat/v1/teamChat.interface';
 import { EventType } from './event.interface';
+import { permissionService } from '@shared/services/permission.service';
+import { Resource, Action } from '@shared/types/permission.types';
+import { RoleName } from '@components/role/v1/role.interface';
 
 /**
  * POST /api/v1/teams-event/:teamId/events
@@ -315,5 +319,156 @@ export const getEventsBroadView = asyncWrapper(async (req: Request, res: Respons
       limit: result.limit,
       totalPages: result.totalPages
     }
+  });
+});
+
+/**
+ * PUT /api/v1/teams-event/:teamId/events/:eventId/rsvp
+ * Create or update RSVP (player or guardian only). Last action wins.
+ */
+export const putRsvp = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  const teamId = (req as any).teamId as string;
+  const userTeamRole = (req as any).userTeamRole as RoleName;
+  const { eventId } = req.params;
+  const body = req.body as { status: 'attending' | 'not_attending'; playerId?: string };
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
+  if (!teamId || !eventId) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Team ID and Event ID are required');
+  }
+
+  if (userTeamRole !== RoleName.PLAYER && userTeamRole !== RoleName.GUARDIAN) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Only players and guardians can set RSVP');
+  }
+
+  await eventService.getEventById(eventId, teamId);
+
+  let playerId: string;
+  if (userTeamRole === RoleName.PLAYER) {
+    const resolved = await rsvpService.getPlayerIdForUser(teamId, String(userId));
+    playerId =
+      resolved ??
+      (await rsvpService.ensurePlayerForUser(teamId, String(userId), {
+        name: req.user?.name,
+        email: req.user?.email
+      }));
+  } else {
+    if (!body.playerId || String(body.playerId).trim() === '') {
+      throw new AppError(httpStatus.BAD_REQUEST, 'playerId is required for guardians');
+    }
+    playerId = body.playerId.trim();
+  }
+
+  const perm = await permissionService.checkPermission({
+    userId: String(userId),
+    teamId,
+    resource: Resource.RSVP,
+    action: Action.UPDATE,
+    playerId: userTeamRole === RoleName.GUARDIAN ? playerId : undefined,
+    targetUserId: userTeamRole === RoleName.PLAYER ? String(userId) : undefined
+  });
+  if (!perm.allowed) {
+    throw new AppError(httpStatus.FORBIDDEN, perm.reason ?? 'Not allowed to set RSVP for this player');
+  }
+
+  const rsvp = await rsvpService.upsertRsvp(
+    eventId,
+    playerId,
+    teamId,
+    body.status as 'attending' | 'not_attending',
+    String(userId)
+  );
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: rsvp
+  });
+});
+
+/**
+ * GET /api/v1/teams-event/:teamId/events/:eventId/rsvp?playerId=...
+ * Get RSVP for event. Player: own (no playerId). Guardian: playerId required. Coach: any playerId or omit for summary via other endpoint.
+ */
+export const getRsvp = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  const teamId = (req as any).teamId as string;
+  const userTeamRole = (req as any).userTeamRole as RoleName;
+  const { eventId } = req.params;
+  const { playerId: queryPlayerId } = req.query as { playerId?: string };
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
+  if (!teamId || !eventId) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Team ID and Event ID are required');
+  }
+
+  await eventService.getEventById(eventId, teamId);
+
+  let playerId: string;
+  if (userTeamRole === RoleName.PLAYER) {
+    const resolved = await rsvpService.getPlayerIdForUser(teamId, String(userId));
+    playerId =
+      resolved ??
+      (await rsvpService.ensurePlayerForUser(teamId, String(userId), {
+        name: req.user?.name,
+        email: req.user?.email
+      }));
+  } else if (userTeamRole === RoleName.GUARDIAN) {
+    if (!queryPlayerId || String(queryPlayerId).trim() === '') {
+      throw new AppError(httpStatus.BAD_REQUEST, 'playerId query is required for guardians');
+    }
+    playerId = queryPlayerId.trim();
+  } else {
+    if (!queryPlayerId || String(queryPlayerId).trim() === '') {
+      throw new AppError(httpStatus.BAD_REQUEST, 'playerId query is required');
+    }
+    playerId = queryPlayerId.trim();
+  }
+
+  const perm = await permissionService.checkPermission({
+    userId: String(userId),
+    teamId,
+    resource: Resource.RSVP,
+    action: Action.VIEW,
+    playerId: userTeamRole === RoleName.GUARDIAN || userTeamRole === RoleName.COACH || userTeamRole === RoleName.ASSISTANT_COACH ? playerId : undefined,
+    targetUserId: userTeamRole === RoleName.PLAYER ? String(userId) : undefined
+  });
+  if (!perm.allowed) {
+    throw new AppError(httpStatus.FORBIDDEN, perm.reason ?? 'Not allowed to view this RSVP');
+  }
+
+  const rsvp = await rsvpService.getRsvp(eventId, playerId);
+  if (!rsvp) {
+    throw new AppError(httpStatus.NOT_FOUND, 'RSVP not found');
+  }
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: rsvp
+  });
+});
+
+/**
+ * GET /api/v1/teams-event/:teamId/events/:eventId/rsvp/summary
+ * RSVP aggregation for event (coach/assistant only).
+ */
+export const getRsvpSummary = asyncWrapper(async (req: Request, res: Response) => {
+  const { teamId, eventId } = req.params;
+
+  if (!teamId || !eventId) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Team ID and Event ID are required');
+  }
+
+  await eventService.getEventById(eventId, teamId);
+
+  const summary = await rsvpService.getRsvpSummary(eventId, teamId);
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: summary
   });
 });

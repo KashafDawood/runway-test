@@ -9,6 +9,7 @@ import {
 } from '@components/auth/v1/auth.middleware';
 import * as eventController from './event.controller';
 import * as eventValidation from './event.validation';
+import * as rsvpValidation from './rsvp.validation';
 
 const router = Router();
 
@@ -87,6 +88,44 @@ router.delete(
   extractTeamContext,
   requireTeamAdmin,
   eventController.deleteEvent
+);
+
+/**
+ * GET /api/v1/teams-event/:teamId/events/:eventId/rsvp/summary
+ * RSVP aggregation for event (coach/assistant only).
+ */
+router.get(
+  '/:teamId/events/:eventId/rsvp/summary',
+  verifyToken,
+  extractTeamContext,
+  requireTeamAdmin,
+  eventController.getRsvpSummary
+);
+
+/**
+ * GET /api/v1/teams-event/:teamId/events/:eventId/rsvp?playerId=...
+ * Get RSVP for event. Player: own. Guardian: playerId required. Coach: playerId required.
+ */
+router.get(
+  '/:teamId/events/:eventId/rsvp',
+  verifyToken,
+  extractTeamContext,
+  requireTeamMember,
+  validate(rsvpValidation.getRsvpQuerySchema),
+  eventController.getRsvp
+);
+
+/**
+ * PUT /api/v1/teams-event/:teamId/events/:eventId/rsvp
+ * Create or update RSVP (player or guardian only). Last action wins.
+ */
+router.put(
+  '/:teamId/events/:eventId/rsvp',
+  verifyToken,
+  extractTeamContext,
+  requireTeamMember,
+  validate(rsvpValidation.putRsvpSchema),
+  eventController.putRsvp
 );
 
 export default router;
