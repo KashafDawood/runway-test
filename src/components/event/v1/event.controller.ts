@@ -4,6 +4,7 @@ import asyncWrapper from '@core/utils/asyncWrapper';
 import AppError from '@core/utils/appError';
 import * as eventService from './event.service';
 import * as rsvpService from './rsvp.service';
+import * as attendanceService from './attendance.service';
 import { postSystemMessage } from '@components/teamChat/v1/systemMessage.service';
 import { SystemEventKind } from '@components/teamChat/v1/teamChat.interface';
 import { EventType } from './event.interface';
@@ -69,7 +70,8 @@ export const createEvent = asyncWrapper(async (req: Request, res: Response) => {
 
 /**
  * GET /api/v1/teams-event/:teamId/events/:eventId
- * Get one event by ID (team member).
+ * Detailed event view: event details, metadata (allDay, durationMinutes, typeLabel), and RSVP summary (counts).
+ * Works for all roles (read-only).
  */
 export const getEvent = asyncWrapper(async (req: Request, res: Response) => {
   const { teamId, eventId } = req.params;
@@ -81,9 +83,37 @@ export const getEvent = asyncWrapper(async (req: Request, res: Response) => {
   const doc = await eventService.getEventById(eventId, teamId);
   const normalized = eventService.normalizeEvent(doc);
 
+  const instanceForMeta = {
+    eventId: normalized.id,
+    title: normalized.title,
+    type: normalized.type,
+    start: normalized.start,
+    end: normalized.end,
+    description: normalized.description,
+    location: normalized.location,
+    isRecurring: normalized.isRecurring,
+    teamId: normalized.teamId
+  };
+  const enriched = eventService.enrichEventForCalendar(instanceForMeta);
+
+  const rsvpSummaryFull = await rsvpService.getRsvpSummary(eventId, teamId);
+  const rsvpSummary = {
+    attending: rsvpSummaryFull.attending,
+    not_attending: rsvpSummaryFull.not_attending,
+    no_response: rsvpSummaryFull.no_response
+  };
+
+  const detail = {
+    ...normalized,
+    allDay: enriched.allDay,
+    durationMinutes: enriched.durationMinutes,
+    typeLabel: enriched.typeLabel,
+    rsvpSummary
+  };
+
   res.status(httpStatus.OK).json({
     success: true,
-    data: normalized
+    data: detail
   });
 });
 
@@ -470,5 +500,190 @@ export const getRsvpSummary = asyncWrapper(async (req: Request, res: Response) =
   res.status(httpStatus.OK).json({
     success: true,
     data: summary
+  });
+});
+
+/**
+ * PUT /api/v1/teams-event/:teamId/events/:eventId/attendance
+ * Mark attendance (present/absent) for a player. Coach/assistant only.
+ */
+export const putAttendance = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  const teamId = (req as any).teamId as string;
+  const { eventId } = req.params;
+  const body = req.body as { playerId: string; status: 'present' | 'absent' };
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
+  if (!teamId || !eventId) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Team ID and Event ID are required');
+  }
+  if (!body.playerId || !body.status) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'playerId and status are required');
+  }
+
+  const perm = await permissionService.checkPermission({
+    userId: String(userId),
+    teamId,
+    resource: Resource.ATTENDANCE,
+    action: Action.UPDATE
+  });
+  if (!perm.allowed) {
+    throw new AppError(httpStatus.FORBIDDEN, perm.reason ?? 'Only coaches can mark attendance');
+  }
+
+  await eventService.getEventById(eventId, teamId);
+
+  const attendance = await attendanceService.markAttendance(
+    eventId,
+    body.playerId.trim(),
+    teamId,
+    body.status as 'present' | 'absent',
+    String(userId)
+  );
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: attendance
+  });
+});
+
+/**
+ * GET /api/v1/teams-event/:teamId/events/:eventId/attendance/participants?search=...
+ * Search-first participant list for event. Coach/assistant only.
+ */
+export const getAttendanceParticipants = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  const teamId = (req as any).teamId as string;
+  const { eventId } = req.params;
+  const { search } = req.query as { search?: string };
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
+  if (!teamId || !eventId) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Team ID and Event ID are required');
+  }
+
+  const perm = await permissionService.checkPermission({
+    userId: String(userId),
+    teamId,
+    resource: Resource.ATTENDANCE,
+    action: Action.VIEW
+  });
+  if (!perm.allowed) {
+    throw new AppError(httpStatus.FORBIDDEN, perm.reason ?? 'Not allowed to view attendance');
+  }
+
+  await eventService.getEventById(eventId, teamId);
+
+  const participants = await attendanceService.getParticipantsForEvent(eventId, teamId, {
+    search: search?.trim() || undefined
+  });
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: participants
+  });
+});
+
+/**
+ * GET /api/v1/teams-event/:teamId/events/:eventId/attendance/summary
+ * Attendance summary for event (present/absent/unmarked). Coach/assistant only.
+ */
+export const getAttendanceSummary = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  const teamId = (req as any).teamId as string;
+  const { eventId } = req.params;
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
+  if (!teamId || !eventId) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Team ID and Event ID are required');
+  }
+
+  const perm = await permissionService.checkPermission({
+    userId: String(userId),
+    teamId,
+    resource: Resource.ATTENDANCE,
+    action: Action.VIEW
+  });
+  if (!perm.allowed) {
+    throw new AppError(httpStatus.FORBIDDEN, perm.reason ?? 'Not allowed to view attendance');
+  }
+
+  await eventService.getEventById(eventId, teamId);
+
+  const summary = await attendanceService.getAttendanceSummary(eventId, teamId);
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: summary
+  });
+});
+
+/**
+ * GET /api/v1/teams-event/:teamId/events/:eventId/attendance?playerId=...
+ * Get attendance for event. Coach: any playerId. Player: own. Guardian: linked playerId.
+ */
+export const getAttendance = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  const teamId = (req as any).teamId as string;
+  const userTeamRole = (req as any).userTeamRole as RoleName;
+  const { eventId } = req.params;
+  const { playerId: queryPlayerId } = req.query as { playerId?: string };
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
+  if (!teamId || !eventId) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Team ID and Event ID are required');
+  }
+
+  await eventService.getEventById(eventId, teamId);
+
+  let playerId: string;
+  if (userTeamRole === RoleName.PLAYER) {
+    const resolved = await rsvpService.getPlayerIdForUser(teamId, String(userId));
+    playerId =
+      resolved ??
+      (await rsvpService.ensurePlayerForUser(teamId, String(userId), {
+        name: req.user?.name,
+        email: req.user?.email
+      }));
+  } else if (userTeamRole === RoleName.GUARDIAN) {
+    if (!queryPlayerId || String(queryPlayerId).trim() === '') {
+      throw new AppError(httpStatus.BAD_REQUEST, 'playerId query is required for guardians');
+    }
+    playerId = queryPlayerId.trim();
+  } else {
+    if (!queryPlayerId || String(queryPlayerId).trim() === '') {
+      throw new AppError(httpStatus.BAD_REQUEST, 'playerId query is required');
+    }
+    playerId = queryPlayerId.trim();
+  }
+
+  const perm = await permissionService.checkPermission({
+    userId: String(userId),
+    teamId,
+    resource: Resource.ATTENDANCE,
+    action: Action.VIEW,
+    playerId: userTeamRole === RoleName.GUARDIAN || userTeamRole === RoleName.COACH || userTeamRole === RoleName.ASSISTANT_COACH ? playerId : undefined,
+    targetUserId: userTeamRole === RoleName.PLAYER ? String(userId) : undefined
+  });
+  if (!perm.allowed) {
+    throw new AppError(httpStatus.FORBIDDEN, perm.reason ?? 'Not allowed to view this attendance');
+  }
+
+  const attendance = await attendanceService.getAttendance(eventId, playerId);
+  if (!attendance) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Attendance not found');
+  }
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: attendance
   });
 });

@@ -10,6 +10,7 @@ import {
 import * as eventController from './event.controller';
 import * as eventValidation from './event.validation';
 import * as rsvpValidation from './rsvp.validation';
+import * as attendanceValidation from './attendance.validation';
 
 const router = Router();
 
@@ -126,6 +127,57 @@ router.put(
   requireTeamMember,
   validate(rsvpValidation.putRsvpSchema),
   eventController.putRsvp
+);
+
+/**
+ * GET /api/v1/teams-event/:teamId/events/:eventId/attendance/summary
+ * Attendance summary for event (present/absent/unmarked). Coach/assistant only.
+ */
+router.get(
+  '/:teamId/events/:eventId/attendance/summary',
+  verifyToken,
+  extractTeamContext,
+  requireTeamAdmin,
+  eventController.getAttendanceSummary
+);
+
+/**
+ * GET /api/v1/teams-event/:teamId/events/:eventId/attendance/participants?search=...
+ * Search-first participant list for event. Coach/assistant only.
+ */
+router.get(
+  '/:teamId/events/:eventId/attendance/participants',
+  verifyToken,
+  extractTeamContext,
+  requireTeamAdmin,
+  validate(attendanceValidation.getAttendanceParticipantsQuerySchema),
+  eventController.getAttendanceParticipants
+);
+
+/**
+ * GET /api/v1/teams-event/:teamId/events/:eventId/attendance?playerId=...
+ * Get attendance for event. Coach: any playerId. Player: own. Guardian: linked playerId.
+ */
+router.get(
+  '/:teamId/events/:eventId/attendance',
+  verifyToken,
+  extractTeamContext,
+  requireTeamMember,
+  validate(attendanceValidation.getAttendanceQuerySchema),
+  eventController.getAttendance
+);
+
+/**
+ * PUT /api/v1/teams-event/:teamId/events/:eventId/attendance
+ * Mark attendance (present/absent) for a player. Coach/assistant only.
+ */
+router.put(
+  '/:teamId/events/:eventId/attendance',
+  verifyToken,
+  extractTeamContext,
+  requireTeamAdmin,
+  validate(attendanceValidation.putAttendanceSchema),
+  eventController.putAttendance
 );
 
 export default router;
