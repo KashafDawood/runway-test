@@ -157,19 +157,48 @@ export const deleteEvent = asyncWrapper(async (req: Request, res: Response) => {
 
 /**
  * GET /api/v1/teams-event/:teamId/events?start=ISO&end=ISO&page=1&limit=20
- * List events for team (team member). start/end optional; if omitted returns all events. Paginated.
+ * Or ?view=month|week|day&date=ISO for calendar view (rangeStart, rangeEnd, groupedByDay, meta).
+ * List events for team (team member). start/end optional; if omitted returns all events. Paginated unless view+date used.
  */
 export const getEventsByDateRange = asyncWrapper(async (req: Request, res: Response) => {
   const { teamId } = req.params;
-  const { start, end, page, limit } = req.query as {
+  const { start, end, page, limit, view, date } = req.query as {
     start?: string;
     end?: string;
     page?: string;
     limit?: string;
+    view?: 'month' | 'week' | 'day';
+    date?: string;
   };
 
   if (!teamId) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Team ID is required');
+  }
+
+  const isCalendarView =
+    (view === 'month' || view === 'week' || view === 'day') && date != null && String(date).trim() !== '';
+  if ((view === 'month' || view === 'week' || view === 'day') && (!date || String(date).trim() === '')) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'date is required when view is provided');
+  }
+
+  if (isCalendarView && view && date) {
+    const range = eventService.getRangeForView(view, new Date(date));
+    const result = await eventService.getEventsByTeamAndDateRange(teamId, {
+      rangeStart: range.rangeStart,
+      rangeEnd: range.rangeEnd,
+      calendarView: true
+    });
+    const enriched = result.events.map(eventService.enrichEventForCalendar);
+    const groupedByDay = eventService.groupEventsByDay(enriched);
+    res.status(httpStatus.OK).json({
+      success: true,
+      data: enriched,
+      rangeStart: range.rangeStart.toISOString(),
+      rangeEnd: range.rangeEnd.toISOString(),
+      groupedByDay,
+      meta: { view, date }
+    });
+    return;
   }
 
   const options: Parameters<typeof eventService.getEventsByTeamAndDateRange>[1] = {
@@ -197,20 +226,29 @@ export const getEventsByDateRange = asyncWrapper(async (req: Request, res: Respo
 
 /**
  * GET /api/v1/teams-event/events?teamIds=id1,id2&start=ISO&end=ISO&page=1&limit=20
- * Broad view: list events for one or more teams (teamIds filter). If teamIds omitted, returns events for all teams the user is a member of. start/end optional; paginated.
+ * Or ?view=month|week|day&date=ISO for calendar view (rangeStart, rangeEnd, groupedByDay, meta).
+ * Broad view: list events for one or more teams (teamIds filter). If teamIds omitted, returns events for all teams the user is a member of. start/end optional; paginated unless view+date used.
  */
 export const getEventsBroadView = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
-  const { teamIds, start, end, page, limit } = req.query as {
+  const { teamIds, start, end, page, limit, view, date } = req.query as {
     teamIds?: string | string[];
     start?: string;
     end?: string;
     page?: string;
     limit?: string;
+    view?: 'month' | 'week' | 'day';
+    date?: string;
   };
 
   if (!userId) {
     throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
+
+  const isCalendarViewBroad =
+    (view === 'month' || view === 'week' || view === 'day') && date != null && String(date).trim() !== '';
+  if ((view === 'month' || view === 'week' || view === 'day') && (!date || String(date).trim() === '')) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'date is required when view is provided');
   }
 
   const { UserRole } = await import('@components/userRole/v1/userRole.model');
@@ -235,6 +273,26 @@ export const getEventsBroadView = asyncWrapper(async (req: Request, res: Respons
       .select('teamId')
       .lean();
     teamIdsList = roles.map((r: any) => r.teamId?.toString()).filter(Boolean);
+  }
+
+  if (isCalendarViewBroad && view && date) {
+    const range = eventService.getRangeForView(view, new Date(date));
+    const result = await eventService.getEventsByTeams(teamIdsList, {
+      rangeStart: range.rangeStart,
+      rangeEnd: range.rangeEnd,
+      calendarView: true
+    });
+    const enriched = result.events.map(eventService.enrichEventForCalendar);
+    const groupedByDay = eventService.groupEventsByDay(enriched);
+    res.status(httpStatus.OK).json({
+      success: true,
+      data: enriched,
+      rangeStart: range.rangeStart.toISOString(),
+      rangeEnd: range.rangeEnd.toISOString(),
+      groupedByDay,
+      meta: { view, date }
+    });
+    return;
   }
 
   const options: Parameters<typeof eventService.getEventsByTeams>[1] = {

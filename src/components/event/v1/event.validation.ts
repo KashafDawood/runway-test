@@ -72,7 +72,13 @@ const eventListQuerySchema = {
     'date.format': 'end must be a valid ISO 8601 date'
   }),
   page: Joi.number().integer().min(1).optional(),
-  limit: Joi.number().integer().min(1).max(100).optional()
+  limit: Joi.number().integer().min(1).max(100).optional(),
+  view: Joi.string().valid('month', 'week', 'day').optional().messages({
+    'any.only': 'view must be one of: month, week, day'
+  }),
+  date: Joi.date().iso().optional().messages({
+    'date.format': 'date must be a valid ISO 8601 date'
+  })
 };
 
 export const getEventsByDateRangeSchema: ValidationSchema = {

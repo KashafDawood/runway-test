@@ -2,9 +2,42 @@ import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import AppError from '@core/utils/appError';
 import { Event } from './event.model';
-import { IEvent, EventType, RecurrenceRule, RecurrenceFrequency } from './event.interface';
+import { IEvent, EventType, RecurrenceRule, RecurrenceFrequency, CalendarView } from './event.interface';
 
 const toObjectId = (id: string) => new mongoose.Types.ObjectId(id);
+
+/**
+ * Compute date range for calendar view (month / week / day). Uses UTC for consistency.
+ * Week: ISO week (Monday start).
+ */
+export function getRangeForView(view: CalendarView, date: Date): { rangeStart: Date; rangeEnd: Date } {
+  const d = new Date(date);
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth();
+  const day = d.getUTCDate();
+
+  if (view === 'month') {
+    const rangeStart = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
+    const rangeEnd = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999));
+    return { rangeStart, rangeEnd };
+  }
+
+  if (view === 'week') {
+    const dayOfWeek = d.getUTCDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(d);
+    monday.setUTCDate(d.getUTCDate() + mondayOffset);
+    const rangeStart = new Date(Date.UTC(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate(), 0, 0, 0, 0));
+    const sunday = new Date(rangeStart);
+    sunday.setUTCDate(sunday.getUTCDate() + 6);
+    const rangeEnd = new Date(Date.UTC(sunday.getUTCFullYear(), sunday.getUTCMonth(), sunday.getUTCDate(), 23, 59, 59, 999));
+    return { rangeStart, rangeEnd };
+  }
+
+  const rangeStart = new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
+  const rangeEnd = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
+  return { rangeStart, rangeEnd };
+}
 
 export interface CreateEventInput {
   type: EventType;
@@ -36,6 +69,51 @@ export interface EventInstance {
   location?: string;
   isRecurring?: boolean;
   teamId?: string;
+}
+
+/** Event metadata for UI rendering (response-only, not stored). */
+export interface CalendarEventMeta {
+  allDay: boolean;
+  durationMinutes: number | null;
+  typeLabel: string;
+}
+
+export type EventInstanceWithMeta = EventInstance & CalendarEventMeta;
+
+const TYPE_LABELS: Record<EventType, string> = {
+  [EventType.PRACTICE]: 'Practice',
+  [EventType.GAME]: 'Game',
+  [EventType.CUSTOM]: 'Custom'
+};
+
+/** Enrich event instance with UI metadata (allDay, durationMinutes, typeLabel). */
+export function enrichEventForCalendar(instance: EventInstance): EventInstanceWithMeta {
+  const start = new Date(instance.start);
+  const end = instance.end ? new Date(instance.end) : null;
+  const allDay = end == null;
+  const durationMinutes =
+    end != null ? Math.round((end.getTime() - start.getTime()) / 60000) : null;
+  const typeLabel = TYPE_LABELS[instance.type] ?? instance.type;
+  return {
+    ...instance,
+    allDay,
+    durationMinutes,
+    typeLabel
+  };
+}
+
+/** Group events by day (YYYY-MM-DD in UTC). Each day's array sorted by start. */
+export function groupEventsByDay(events: EventInstanceWithMeta[]): Record<string, EventInstanceWithMeta[]> {
+  const byDay: Record<string, EventInstanceWithMeta[]> = {};
+  for (const event of events) {
+    const key = new Date(event.start).toISOString().slice(0, 10);
+    if (!byDay[key]) byDay[key] = [];
+    byDay[key].push(event);
+  }
+  for (const key of Object.keys(byDay)) {
+    byDay[key].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+  }
+  return byDay;
 }
 
 /** Single-event response: one id only (no duplicate eventId). */
@@ -208,6 +286,8 @@ export async function deleteEvent(eventId: string, teamId: string): Promise<void
 export const DEFAULT_EVENT_PAGE = 1;
 export const DEFAULT_EVENT_LIMIT = 20;
 export const MAX_EVENT_LIMIT = 100;
+/** Max instances returned for calendar view (month/week/day) to avoid runaway recurring expansion. */
+export const CALENDAR_MAX_INSTANCES = 500;
 
 export interface GetEventsResult {
   events: EventInstance[];
@@ -246,11 +326,13 @@ export async function getEventsByTeamAndDateRange(
     rangeEnd?: Date;
     page?: number;
     limit?: number;
+    calendarView?: boolean;
   } = {}
 ): Promise<GetEventsResult> {
   const page = Math.max(1, options.page ?? DEFAULT_EVENT_PAGE);
   const limit = Math.min(MAX_EVENT_LIMIT, Math.max(1, options.limit ?? DEFAULT_EVENT_LIMIT));
   const hasRange = options.rangeStart != null && options.rangeEnd != null;
+  const calendarView = options.calendarView === true;
 
   if (hasRange) {
     const start = new Date(options.rangeStart!);
@@ -285,10 +367,13 @@ export async function getEventsByTeamAndDateRange(
     instances.sort((a, b) => a.start.getTime() - b.start.getTime());
 
     const total = instances.length;
+    if (calendarView) {
+      const capped = instances.slice(0, CALENDAR_MAX_INSTANCES);
+      return { events: capped, total: capped.length, page: 1, limit: capped.length, totalPages: 1 };
+    }
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const skip = (page - 1) * limit;
     const paginated = instances.slice(skip, skip + limit);
-
     return { events: paginated, total, page, limit, totalPages };
   }
 
@@ -324,6 +409,7 @@ export async function getEventsByTeams(
     rangeEnd?: Date;
     page?: number;
     limit?: number;
+    calendarView?: boolean;
   } = {}
 ): Promise<GetEventsResult> {
   if (teamIds.length === 0) {
@@ -333,6 +419,7 @@ export async function getEventsByTeams(
   const page = Math.max(1, options.page ?? DEFAULT_EVENT_PAGE);
   const limit = Math.min(MAX_EVENT_LIMIT, Math.max(1, options.limit ?? DEFAULT_EVENT_LIMIT));
   const hasRange = options.rangeStart != null && options.rangeEnd != null;
+  const calendarView = options.calendarView === true;
   const teamObjectIds = teamIds.map((id) => toObjectId(id));
 
   if (hasRange) {
@@ -370,10 +457,13 @@ export async function getEventsByTeams(
     instances.sort((a, b) => a.start.getTime() - b.start.getTime());
 
     const total = instances.length;
+    if (calendarView) {
+      const capped = instances.slice(0, CALENDAR_MAX_INSTANCES);
+      return { events: capped, total: capped.length, page: 1, limit: capped.length, totalPages: 1 };
+    }
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const skip = (page - 1) * limit;
     const paginated = instances.slice(skip, skip + limit);
-
     return { events: paginated, total, page, limit, totalPages };
   }
 

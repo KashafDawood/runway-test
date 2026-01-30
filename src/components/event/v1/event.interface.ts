@@ -8,6 +8,9 @@ export enum EventType {
 
 export type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly';
 
+/** Calendar view type for range computation (month / week / day). */
+export type CalendarView = 'month' | 'week' | 'day';
+
 export interface RecurrenceRule {
   frequency: RecurrenceFrequency;
   interval: number;
