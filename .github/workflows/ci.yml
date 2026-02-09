@@ -18,8 +18,14 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '18.17.0'
-          cache: 'npm'
-          cache-dependency-path: Runway-Hemero-BE/package-lock.json
+
+      - name: Cache node modules
+        uses: actions/cache@v3
+        with:
+          path: Runway-Hemero-BE/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('Runway-Hemero-BE/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install dependencies
         working-directory: ./Runway-Hemero-BE
