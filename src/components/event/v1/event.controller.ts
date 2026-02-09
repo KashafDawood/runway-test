@@ -261,7 +261,9 @@ export const getEventsByDateRange = asyncWrapper(async (req: Request, res: Respo
 /**
  * GET /api/v1/teams-event/events?teamIds=id1,id2&start=ISO&end=ISO&page=1&limit=20
  * Or ?view=month|week|day&date=ISO for calendar view (rangeStart, rangeEnd, groupedByDay, meta).
- * Broad view: list events for one or more teams (teamIds filter). If teamIds omitted, returns events for all teams the user is a member of. start/end optional; paginated unless view+date used.
+ * Broad view: list events for one or more teams (teamIds filter).
+ * If teamIds omitted, returns events for all teams the user is a member of.
+ * start/end optional; paginated unless view+date used.
  */
 export const getEventsBroadView = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
@@ -298,7 +300,8 @@ export const getEventsBroadView = asyncWrapper(async (req: Request, res: Respons
     })
       .select('teamId')
       .lean();
-    teamIdsList = memberRoles.map((r: any) => r.teamId?.toString()).filter(Boolean);
+    teamIdsList = memberRoles.map((r: { teamId?: { toString: () => string } }) => 
+      r.teamId?.toString()).filter(Boolean);
   } else {
     const roles = await UserRole.find({
       userId,
@@ -306,7 +309,8 @@ export const getEventsBroadView = asyncWrapper(async (req: Request, res: Respons
     })
       .select('teamId')
       .lean();
-    teamIdsList = roles.map((r: any) => r.teamId?.toString()).filter(Boolean);
+    teamIdsList = roles.map((r: { teamId?: { toString: () => string } }) => 
+      r.teamId?.toString()).filter(Boolean);
   }
 
   if (isCalendarViewBroad && view && date) {
@@ -358,8 +362,8 @@ export const getEventsBroadView = asyncWrapper(async (req: Request, res: Respons
  */
 export const putRsvp = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
-  const teamId = (req as any).teamId as string;
-  const userTeamRole = (req as any).userTeamRole as RoleName;
+  const teamId = req.teamId as string;
+  const userTeamRole = req.userTeamRole as RoleName;
   const { eventId } = req.params;
   const body = req.body as { status: 'attending' | 'not_attending'; playerId?: string };
 
@@ -420,12 +424,13 @@ export const putRsvp = asyncWrapper(async (req: Request, res: Response) => {
 
 /**
  * GET /api/v1/teams-event/:teamId/events/:eventId/rsvp?playerId=...
- * Get RSVP for event. Player: own (no playerId). Guardian: playerId required. Coach: any playerId or omit for summary via other endpoint.
+ * Get RSVP for event. Player: own (no playerId). Guardian: playerId required.
+ * Coach: any playerId or omit for summary via other endpoint.
  */
 export const getRsvp = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
-  const teamId = (req as any).teamId as string;
-  const userTeamRole = (req as any).userTeamRole as RoleName;
+  const teamId = req.teamId as string;
+  const userTeamRole = req.userTeamRole as RoleName;
   const { eventId } = req.params;
   const { playerId: queryPlayerId } = req.query as { playerId?: string };
 
@@ -464,7 +469,9 @@ export const getRsvp = asyncWrapper(async (req: Request, res: Response) => {
     teamId,
     resource: Resource.RSVP,
     action: Action.VIEW,
-    playerId: userTeamRole === RoleName.GUARDIAN || userTeamRole === RoleName.COACH || userTeamRole === RoleName.ASSISTANT_COACH ? playerId : undefined,
+    playerId: userTeamRole === RoleName.GUARDIAN || 
+      userTeamRole === RoleName.COACH || 
+      userTeamRole === RoleName.ASSISTANT_COACH ? playerId : undefined,
     targetUserId: userTeamRole === RoleName.PLAYER ? String(userId) : undefined
   });
   if (!perm.allowed) {
@@ -509,7 +516,7 @@ export const getRsvpSummary = asyncWrapper(async (req: Request, res: Response) =
  */
 export const putAttendance = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
-  const teamId = (req as any).teamId as string;
+  const teamId = req.teamId as string;
   const { eventId } = req.params;
   const body = req.body as { playerId: string; status: 'present' | 'absent' };
 
@@ -555,7 +562,7 @@ export const putAttendance = asyncWrapper(async (req: Request, res: Response) =>
  */
 export const getAttendanceParticipants = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
-  const teamId = (req as any).teamId as string;
+  const teamId = req.teamId as string;
   const { eventId } = req.params;
   const { search } = req.query as { search?: string };
 
@@ -594,7 +601,7 @@ export const getAttendanceParticipants = asyncWrapper(async (req: Request, res: 
  */
 export const getAttendanceSummary = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
-  const teamId = (req as any).teamId as string;
+  const teamId = req.teamId as string;
   const { eventId } = req.params;
 
   if (!userId) {
@@ -630,8 +637,8 @@ export const getAttendanceSummary = asyncWrapper(async (req: Request, res: Respo
  */
 export const getAttendance = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
-  const teamId = (req as any).teamId as string;
-  const userTeamRole = (req as any).userTeamRole as RoleName;
+  const teamId = req.teamId as string;
+  const userTeamRole = req.userTeamRole as RoleName;
   const { eventId } = req.params;
   const { playerId: queryPlayerId } = req.query as { playerId?: string };
 
@@ -670,7 +677,9 @@ export const getAttendance = asyncWrapper(async (req: Request, res: Response) =>
     teamId,
     resource: Resource.ATTENDANCE,
     action: Action.VIEW,
-    playerId: userTeamRole === RoleName.GUARDIAN || userTeamRole === RoleName.COACH || userTeamRole === RoleName.ASSISTANT_COACH ? playerId : undefined,
+    playerId: userTeamRole === RoleName.GUARDIAN || 
+      userTeamRole === RoleName.COACH || 
+      userTeamRole === RoleName.ASSISTANT_COACH ? playerId : undefined,
     targetUserId: userTeamRole === RoleName.PLAYER ? String(userId) : undefined
   });
   if (!perm.allowed) {

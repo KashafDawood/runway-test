@@ -1,5 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
-import { IAttendance, AttendanceStatus } from './attendance.interface';
+import { IAttendance } from './attendance.interface';
 
 const ATTENDANCE_STATUSES = ['present', 'absent'] as const;
 

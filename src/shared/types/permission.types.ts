@@ -1,5 +1,3 @@
-import { RoleName } from "@components/role/v1/role.interface";
-
 export enum Resource {
   TEAM = "team",
   CHAT = "chat",

@@ -20,7 +20,7 @@ const app: Application = express();
 app.use(
   '/api/static',
   express.static('public', {
-    setHeaders: function (res, path) {
+    setHeaders: function (res) {
       const origin = res.req.headers.origin;
 
       if (allowedOrigins.includes(origin)) {

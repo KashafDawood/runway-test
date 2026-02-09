@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import { TeamInvite } from './teamInvite.model';
 import { InviteStatus, ITeamInvite } from './teamInvite.interface';
 import { Team } from '@components/team/v1/team.model';
@@ -93,7 +93,7 @@ export const createBatchInvites = async (
   const invalidEmails: string[] = [];
 
   for (const email of normalizedEmails) {
-    if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(email)) {
+    if (!/^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$/.test(email)) {
       invalidEmails.push(email);
       results.failed.push({
         email,
@@ -133,8 +133,19 @@ export const createBatchInvites = async (
   const pendingInviteMap = new Map(pendingInvites.map(i => [i.email, true]));
 
   // Process emails and collect for batch creation
-  const invitesToCreate: any[] = [];
-  const emailsToSend: Array<{ to: string; template: string; data: Record<string, any> }> = [];
+  const invitesToCreate: Array<{
+    teamId: mongoose.Types.ObjectId;
+    invitedBy: mongoose.Types.ObjectId;
+    email: string;
+    status: InviteStatus;
+    token: string;
+    expiresAt: Date;
+  }> = [];
+  const emailsToSend: Array<{ 
+    to: string; 
+    template: string; 
+    data: Record<string, unknown> 
+  }> = [];
 
   for (const email of validEmails) {
     try {
@@ -172,8 +183,8 @@ export const createBatchInvites = async (
 
       // Add to batch creation array
       invitesToCreate.push({
-        teamId,
-        invitedBy,
+        teamId: new mongoose.Types.ObjectId(teamId),
+        invitedBy: new mongoose.Types.ObjectId(invitedBy),
         email,
         status: InviteStatus.PENDING,
         token,
@@ -193,10 +204,11 @@ export const createBatchInvites = async (
         }
       });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       results.failed.push({
         email,
-        reason: error.message || 'Failed to process email'
+        reason: errorMessage || 'Failed to process email'
       });
     }
   }
@@ -205,7 +217,7 @@ export const createBatchInvites = async (
   if (invitesToCreate.length > 0) {
     try {
       const createdInvites = await TeamInvite.insertMany(invitesToCreate);
-      results.success = createdInvites as any;
+      results.success = createdInvites;
 
       logger.info(`Batch invites created: ${createdInvites.length} invites for team ${teamId}`);
 
@@ -223,11 +235,12 @@ export const createBatchInvites = async (
         });
       }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error('Failed to create batch invites', error);
       throw new AppError(
         httpStatus.INTERNAL_SERVER_ERROR,
-        'Failed to create invites: ' + error.message
+        'Failed to create invites: ' + errorMessage
       );
     }
   }
@@ -286,7 +299,13 @@ export const checkInvite = async (data: ICheckInviteInput): Promise<{
  */
 export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
   invite: ITeamInvite;
-  user: any;
+  user: {
+    _id: string;
+    name: string;
+    email: string;
+    email_verified: boolean;
+    avatar?: string;
+  };
 }> => {
   const { token, role, userId } = data;
 
@@ -392,7 +411,8 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     joinedAt: new Date()
   });
 
-  // When user accepts as PLAYER, create a roster (Player) record linked to their account so RSVP and other per-player features work
+  // When user accepts as PLAYER, create a roster (Player) record linked to their account
+  // so RSVP and other per-player features work
   if (role === RoleName.PLAYER) {
     const nameParts = (user.name || user.email?.split('@')[0] || 'Player').trim().split(/\s+/);
     const firstName = nameParts[0] || 'Player';
@@ -472,7 +492,10 @@ export const getUserInvites = async (
   }
 
   // Build query filter
-  const queryFilter: any = { 
+  const queryFilter: {
+    email: string;
+    status?: InviteStatus;
+  } = { 
     email: user.email.toLowerCase() 
   };
 
@@ -568,8 +591,8 @@ export const resendInvite = async (
   const inviteUrl = `${config.app.frontEndUrl}/team/invite/accept?token=${invite.token}`;
 
   await sendEmail('teamInvite', invite.email, {
-    teamName: (invite.teamId as any).name,
-    inviterName: (invite.invitedBy as any).name,
+    teamName: (invite.teamId as unknown as { name: string }).name,
+    inviterName: (invite.invitedBy as unknown as { name: string }).name,
     inviteUrl,
     expiresInDays: Math.floor((invite.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
   });

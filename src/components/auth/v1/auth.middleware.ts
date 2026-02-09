@@ -115,7 +115,7 @@ export const extractTeamContext = asyncWrapper(
     }
 
     // Attach teamId to request for easy access
-    (req as any).teamId = teamId as string;
+    req.teamId = teamId as string;
 
     next();
   },
@@ -129,10 +129,10 @@ export const extractTeamContext = asyncWrapper(
 export const useActiveTeamContext = asyncWrapper(
   async (req: Request, res: Response, next: NextFunction) => {
     // only set if team id not already in request
-    if (!(req as any).teamId && req.user ) {
+    if (!req.teamId && req.user ) {
       const user = await UserModel.findById(req.user._id).select('activeTeamId');
       if (user?.activeTeamId) {
-        (req as any).teamId = user.activeTeamId.toString();
+        req.teamId = user.activeTeamId.toString();
       }
     }
     next();
@@ -160,8 +160,8 @@ export const requireActiveTeam = asyncWrapper(
     }
 
     // Set teamId from active team if not already set
-    if (!(req as any).teamId) {
-      (req as any).teamId = String(user.activeTeamId);
+    if (!req.teamId) {
+      req.teamId = String(user.activeTeamId);
     }
 
     next();
@@ -179,7 +179,7 @@ export const requireTeamRole = (...allowedRoles: RoleName[]) => {
         throw new AppError(httpStatus.UNAUTHORIZED, "Authentication required");
       }
 
-      if (!(req as any).teamId) {
+      if (!req.teamId) {
         throw new AppError(
           httpStatus.BAD_REQUEST,
           "Team context is required. Use extractTeamContext middleware first.",
@@ -189,7 +189,7 @@ export const requireTeamRole = (...allowedRoles: RoleName[]) => {
       // Get user's role in this team
       const userRole = await UserRole.findOne({
         userId: req.user._id,
-        teamId: (req as any).teamId,
+        teamId: req.teamId,
         status: UserRoleStatus.ACTIVE,
       });
 
@@ -208,7 +208,7 @@ export const requireTeamRole = (...allowedRoles: RoleName[]) => {
       }
 
       // Attach user's role in team to request
-      (req as any).userTeamRole = userRole.roleName;
+      req.userTeamRole = userRole.roleName;
 
       next();
     },
@@ -232,19 +232,19 @@ export const requireTeamMember = asyncWrapper(
       throw new AppError(httpStatus.UNAUTHORIZED, "Authentication required");
     }
 
-    if (!(req as any).teamId) {
-      throw new AppError(
-        httpStatus.BAD_REQUEST,
-        "Team context is required. Use extractTeamContext middleware first.",
-      );
-    }
+      if (!req.teamId) {
+        throw new AppError(
+          httpStatus.BAD_REQUEST,
+          "Team context is required. Use extractTeamContext middleware first.",
+        );
+      }
 
-    // Check if user has any active role in team
-    const userRole = await UserRole.findOne({
-      userId: req.user._id,
-      teamId: (req as any).teamId,
-      status: UserRoleStatus.ACTIVE,
-    });
+      // Check if user has any active role in team
+      const userRole = await UserRole.findOne({
+        userId: req.user._id,
+        teamId: req.teamId,
+        status: UserRoleStatus.ACTIVE,
+      });
 
     if (!userRole) {
       throw new AppError(
@@ -254,7 +254,7 @@ export const requireTeamMember = asyncWrapper(
     }
 
     // Attach user's role to request
-    (req as any).userTeamRole = userRole.roleName;
+    req.userTeamRole = userRole.roleName;
 
     next();
   },

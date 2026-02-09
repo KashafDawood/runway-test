@@ -36,7 +36,7 @@ const emailClient = new Email({
   },
 });
 
-export const sendEmail = async (template: string, to: string | string[], locals: any): Promise<void> => {
+export const sendEmail = async (template: string, to: string | string[], locals: Record<string, unknown>): Promise<void> => {
   try {
     const recipients = Array.isArray(to) ? to : [to];
     
@@ -49,8 +49,9 @@ export const sendEmail = async (template: string, to: string | string[], locals:
     });
     
     logger.info(`Email sent successfully: ${template} to ${recipients.join(', ')}`);
-  } catch (error: any) {
-    logger.error(`Error sending email: ${template}`, error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`Error sending email: ${template}`, errorMessage);
     throw error;
   }
 };

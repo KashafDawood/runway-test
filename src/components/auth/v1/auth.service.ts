@@ -4,7 +4,6 @@ import httpStatus from 'http-status';
 import UserModel from '@components/user/v1/user.model';
 import { IUser } from '@components/user/v1/user.interface';
 import { Team } from '@components/team/v1/team.model';
-import { Role } from '@components/role/v1/role.model';
 import { UserRole } from '@components/userRole/v1/userRole.model';
 import { RoleName } from '@components/role/v1/role.interface';
 import { UserRoleStatus } from '@components/userRole/v1/userRole.interface';
@@ -162,8 +161,8 @@ export const signIn = async (email: string, password: string): Promise<IAuthResp
       avatar: user.avatar,
     },
     team: userTeams[0] ? {
-      id: (userTeams[0].teamId as any)._id,
-      name: (userTeams[0].teamId as any).name,
+      id: (userTeams[0].teamId as unknown as { _id: string; name: string })._id,
+      name: (userTeams[0].teamId as unknown as { _id: string; name: string }).name,
       role: userTeams[0].roleName
     } : undefined,
     token,
@@ -374,7 +373,7 @@ export const getActiveTeam = async (userId: string) => {
     return null;
   }
 
-  const teamDoc = user.activeTeamId as any;
+  const teamDoc = user.activeTeamId as unknown as { _id: string; name: string; sport?: string; season?: string };
 
   return {
     id: teamDoc._id,

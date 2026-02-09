@@ -1,5 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
-import { IRsvp, RsvpStatus } from './rsvp.interface';
+import { IRsvp } from './rsvp.interface';
 
 const RSVP_STATUSES = ['attending', 'not_attending'] as const;
 

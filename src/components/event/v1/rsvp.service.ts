@@ -152,7 +152,12 @@ export async function getRsvpSummary(eventId: string, teamId: string): Promise<R
   ]);
 
   const rsvpByPlayer = new Map<string, { status: RsvpStatus; updatedAt: Date; updatedBy?: string }>();
-  for (const r of rsvps as any[]) {
+  for (const r of rsvps as Array<{
+    playerId: mongoose.Types.ObjectId;
+    status: RsvpStatus;
+    updatedAt: Date;
+    updatedBy?: mongoose.Types.ObjectId;
+  }>) {
     const pid = (r.playerId as mongoose.Types.ObjectId).toString();
     rsvpByPlayer.set(pid, {
       status: r.status,

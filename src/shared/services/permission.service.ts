@@ -14,7 +14,7 @@ export class PermissionService {
    * Check if user has permission to perform action on resource in team context
    */
   async checkPermission(context: PermissionContext): Promise<PermissionResult> {
-    const { userId, teamId, resource, action } = context;
+    const { userId, teamId, resource } = context;
 
     // Get user's role in this team
     const userRole = await this.getUserRoleInTeam(userId, teamId);

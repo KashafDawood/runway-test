@@ -6,10 +6,12 @@ import UserModel from '@components/user/v1/user.model';
 import { UserRole } from '@components/userRole/v1/userRole.model';
 import { UserRoleStatus } from '@components/userRole/v1/userRole.interface';
 import { createUserMessage, createSystemMessage } from './teamChat.service';
+import { IUser } from '@components/user/v1/user.interface';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
-  user?: any;
+  user?: IUser;
+  teamId?: string;
 }
 
 interface SocketAuthData {
@@ -36,7 +38,7 @@ export class TeamChatGateway {
 
   constructor(httpServer: HTTPServer) {
     // Set singleton instance
-    gatewayInstance = this;
+    gatewayInstance = this as TeamChatGateway;
     this.io = new SocketIOServer(httpServer, {
       cors: {
         origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
@@ -88,12 +90,13 @@ export class TeamChatGateway {
         // Attach user info to socket
         socket.userId = String(user._id);
         socket.user = user;
-        (socket as any).teamId = teamId;
+        socket.teamId = teamId;
 
         next();
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         logger.error('Socket.IO authentication error:', error);
-        next(new Error(error.message || 'Authentication failed'));
+        next(new Error(errorMessage || 'Authentication failed'));
       }
     });
   }
@@ -103,7 +106,7 @@ export class TeamChatGateway {
    */
   private setupEventHandlers() {
     this.io.on('connection', (socket: AuthenticatedSocket) => {
-      const teamId = (socket as any).teamId;
+      const teamId = socket.teamId;
       const userId = socket.userId;
 
       if (!teamId || !userId) {
@@ -136,9 +139,10 @@ export class TeamChatGateway {
           this.io.to(roomName).emit('message:new', message);
 
           logger.info(`Message sent by ${userId} in team ${teamId}`);
-        } catch (error: any) {
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
           logger.error('Error sending message:', error);
-          socket.emit('error', { message: error.message || 'Failed to send message' });
+          socket.emit('error', { message: errorMessage || 'Failed to send message' });
         }
       });
 
@@ -160,7 +164,7 @@ export class TeamChatGateway {
    * Emit a new message to all clients in a team room
    * Called from service layer when messages are created via REST API
    */
-  public emitNewMessage(teamId: string, message: any) {
+  public emitNewMessage(teamId: string, message: Record<string, unknown>) {
     const roomName = `team:${teamId}`;
     this.io.to(roomName).emit('message:new', message);
     logger.info(`Broadcasted message to team room: ${roomName}`);
@@ -169,7 +173,7 @@ export class TeamChatGateway {
   /**
    * Emit a system message to all clients in a team room
    */
-  public async emitSystemMessage(teamId: string, text: string, meta?: Record<string, any>) {
+  public async emitSystemMessage(teamId: string, text: string, meta?: Record<string, unknown>) {
     try {
       const message = await createSystemMessage({
         teamId,
@@ -180,7 +184,7 @@ export class TeamChatGateway {
       const roomName = `team:${teamId}`;
       this.io.to(roomName).emit('message:new', message);
       logger.info(`Broadcasted system message to team room: ${roomName}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Error creating system message:', error);
     }
   }

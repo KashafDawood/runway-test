@@ -113,7 +113,12 @@ export async function getAttendanceSummary(eventId: string, teamId: string): Pro
     string,
     { status: AttendanceStatus; markedBy?: string; updatedAt: Date }
   >();
-  for (const a of attendances as any[]) {
+  for (const a of attendances as Array<{
+    playerId: { toString: () => string } | string;
+    status: AttendanceStatus;
+    markedBy?: { toString: () => string } | string;
+    updatedAt: Date;
+  }>) {
     const pid = String(a.playerId);
     attendanceByPlayer.set(pid, {
       status: a.status,
@@ -202,7 +207,12 @@ export async function getParticipantsForEvent(
     string,
     { status: AttendanceStatus; markedBy?: string; updatedAt: Date }
   >();
-  for (const a of attendances as any[]) {
+  for (const a of attendances as Array<{
+    playerId: { toString: () => string } | string;
+    status: AttendanceStatus;
+    markedBy?: { toString: () => string } | string;
+    updatedAt: Date;
+  }>) {
     const pid = String(a.playerId);
     attendanceByPlayer.set(pid, {
       status: a.status,
@@ -211,7 +221,13 @@ export async function getParticipantsForEvent(
     });
   }
 
-  return (players as any[]).map((p) => {
+  return (players as Array<{
+    _id: { toString: () => string } | string;
+    firstName?: string;
+    lastName?: string;
+    jerseyNumber?: string;
+    position?: string;
+  }>).map((p) => {
     const playerId = String(p._id);
     const att = attendanceByPlayer.get(playerId);
     return {

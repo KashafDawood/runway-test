@@ -117,12 +117,33 @@ export function groupEventsByDay(events: EventInstanceWithMeta[]): Record<string
 }
 
 /** Single-event response: one id only (no duplicate eventId). */
-export function normalizeEvent(doc: IEvent): Omit<EventInstance, 'eventId'> & { id: string; teamId?: string; createdAt: Date; updatedAt: Date; createdBy: string } {
-  const json = doc.toJSON() as any;
+export function normalizeEvent(
+  doc: IEvent
+): Omit<EventInstance, 'eventId'> & { 
+  id: string; 
+  teamId?: string; 
+  createdAt: Date; 
+  updatedAt: Date; 
+  createdBy: string 
+} {
+  const json = doc.toJSON() as {
+    _id: { toString: () => string };
+    teamId?: { toString: () => string };
+    type: string;
+    title: string;
+    description?: string;
+    start: Date;
+    end?: Date;
+    location?: string;
+    createdBy?: { toString: () => string };
+    createdAt: Date;
+    updatedAt: Date;
+    recurrence?: unknown;
+  };
   return {
     id: json._id.toString(),
     teamId: json.teamId?.toString(),
-    type: json.type,
+    type: json.type as EventType,
     title: json.title,
     description: json.description,
     start: json.start,
@@ -151,11 +172,29 @@ function expandRecurringEvent(
   event: IEvent,
   rangeStart: Date,
   rangeEnd: Date
-): Array<{ eventId: string; title: string; type: EventType; start: Date; end: Date | null; description?: string; location?: string; isRecurring: true }> {
+): Array<{ 
+  eventId: string; 
+  title: string; 
+  type: EventType; 
+  start: Date; 
+  end: Date | null; 
+  description?: string; 
+  location?: string; 
+  isRecurring: true 
+}> {
   const recurrence = event.recurrence;
   if (!recurrence) return [];
 
-  const result: Array<{ eventId: string; title: string; type: EventType; start: Date; end: Date | null; description?: string; location?: string; isRecurring: true }> = [];
+  const result: Array<{ 
+    eventId: string; 
+    title: string; 
+    type: EventType; 
+    start: Date; 
+    end: Date | null; 
+    description?: string; 
+    location?: string; 
+    isRecurring: true 
+  }> = [];
   const eventStart = new Date(event.start);
   const eventEnd = event.end ? new Date(event.end) : new Date(eventStart.getTime());
   const durationMs = eventEnd.getTime() - eventStart.getTime();
@@ -387,7 +426,16 @@ export async function getEventsByTeamAndDateRange(
     Event.countDocuments({ teamId: toObjectId(teamId) })
   ]);
 
-  const instances: EventInstance[] = events.map((e: any) => ({
+  const instances: EventInstance[] = events.map((e: {
+    _id: { toString: () => string };
+    title: string;
+    type: EventType;
+    start: Date;
+    end?: Date;
+    description?: string;
+    location?: string;
+    recurrence?: unknown;
+  }) => ({
     eventId: e._id.toString(),
     title: e.title,
     type: e.type,
@@ -413,7 +461,13 @@ export async function getEventsByTeams(
   } = {}
 ): Promise<GetEventsResult> {
   if (teamIds.length === 0) {
-    return { events: [], total: 0, page: options.page ?? DEFAULT_EVENT_PAGE, limit: options.limit ?? DEFAULT_EVENT_LIMIT, totalPages: 0 };
+    return { 
+      events: [], 
+      total: 0, 
+      page: options.page ?? DEFAULT_EVENT_PAGE, 
+      limit: options.limit ?? DEFAULT_EVENT_LIMIT, 
+      totalPages: 0 
+    };
   }
 
   const page = Math.max(1, options.page ?? DEFAULT_EVENT_PAGE);
@@ -477,7 +531,17 @@ export async function getEventsByTeams(
     Event.countDocuments({ teamId: { $in: teamObjectIds } })
   ]);
 
-  const instances: EventInstance[] = (events as any[]).map((e) => ({
+  const instances: EventInstance[] = (events as Array<{
+    _id: { toString: () => string };
+    teamId?: { toString: () => string };
+    title: string;
+    type: EventType;
+    start: Date;
+    end?: Date;
+    description?: string;
+    location?: string;
+    recurrence?: unknown;
+  }>).map((e) => ({
     eventId: e._id.toString(),
     teamId: e.teamId?.toString(),
     title: e.title,

@@ -2,7 +2,7 @@ import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import AppError from '@core/utils/appError';
 import { TeamMessage, } from './teamChat.model';
-import { ITeamMessage, TeamMessageType } from './teamChat.interface';
+import { ITeamMessage, SystemMessageMeta, TeamMessageType } from './teamChat.interface';
 import { getTeamChatGateway } from './teamChat.gateway';
 import UserModel from '@components/user/v1/user.model';
 
@@ -15,7 +15,7 @@ interface CreateUserMessageInput {
 interface CreateSystemMessageInput {
   teamId: string;
   text: string;
-  meta?: Record<string, any>;
+  meta?: Record<string, unknown>;
 }
 
 export interface GetMessagesInput {
@@ -31,7 +31,16 @@ export const MAX_PAGE_SIZE = 100;
 const toObjectId = (id: string) => new mongoose.Types.ObjectId(id);
 
 const normalizeMessage = async (message: ITeamMessage) => {
-  const json = message.toJSON() as any;
+  const json = message.toJSON() as {
+    _id: string;
+    teamId: string | { toString: () => string };
+    senderId?: string | { toString: () => string } | null;
+    type: TeamMessageType;
+    text: string;
+    meta?: Record<string, unknown> | SystemMessageMeta;
+    createdAt: Date;
+    updatedAt: Date;
+  };
 
   // Populate sender information if senderId exists
   let sender = null;
@@ -130,7 +139,10 @@ export const getMessages = async (input: GetMessagesInput) => {
     limit = MAX_PAGE_SIZE;
   }
 
-  const query: any = {
+  const query: {
+    teamId: mongoose.Types.ObjectId;
+    createdAt?: { $lt?: Date; $gt?: Date };
+  } = {
     teamId: toObjectId(teamId)
   };
 
@@ -143,7 +155,7 @@ export const getMessages = async (input: GetMessagesInput) => {
   }
 
   // Default: latest messages first
-  let sort: any = { createdAt: -1, _id: -1 };
+  let sort: Record<string, 1 | -1> = { createdAt: -1, _id: -1 };
 
   // When polling for new messages after a timestamp, return oldest first so
   // the client can append them in order.

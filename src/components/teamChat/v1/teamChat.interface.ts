@@ -37,7 +37,7 @@ export interface ITeamMessage extends Document {
   type: TeamMessageType;
   text: string;
   /** For system messages: { eventKind, ...payload }. For user messages: undefined. */
-  meta?: Record<string, any> | SystemMessageMeta;
+  meta?: Record<string, unknown> | SystemMessageMeta;
   createdAt: Date;
   updatedAt: Date;
 }

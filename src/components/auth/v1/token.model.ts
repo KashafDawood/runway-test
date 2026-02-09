@@ -8,7 +8,7 @@ export interface IToken extends Document {
   token: string;
   type: TokenType;
   expires_at: Date;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
   created_at: Date;
 }
 

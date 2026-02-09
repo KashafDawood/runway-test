@@ -5,15 +5,16 @@ import { ITokenDecoded } from '@core/interfaces/jwtToken';
 import AppError from '@core/utils/appError';
 import httpStatus from 'http-status';
 
-export const genAccessToken = (userId: string, additionalPayload?: any): Promise<string> => {
+export const genAccessToken = (userId: string, additionalPayload?: Record<string, unknown>): Promise<string> => {
   return new Promise((resolve, reject) => {
     try {
       const { secret, expiresIn } = config.jwt;
       const payload = { _id: userId, ...additionalPayload };
       const token = jwt.sign(payload, secret, { expiresIn });
       resolve(token);
-    } catch (err: any) {
-      logger.error(`Error generating access token`, err.message);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Error generating access token`, errorMessage);
       reject(err);
     }
   });

@@ -16,7 +16,8 @@ const router = Router();
 
 /**
  * GET /api/v1/teams-event/events?teamIds=id1,id2&start=ISO&end=ISO&page=1&limit=20
- * Broad view: list events for one or more teams (teamIds filter). If teamIds omitted, all teams user is in. start/end optional; paginated.
+ * Broad view: list events for one or more teams (teamIds filter).
+ * If teamIds omitted, all teams user is in. start/end optional; paginated.
  */
 router.get(
   '/events',

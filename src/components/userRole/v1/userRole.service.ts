@@ -16,7 +16,15 @@ interface IUpdateRoleInput {
 }
 
 interface IUpdateRoleResult {
-  userRole: any;
+  userRole: {
+    _id: string;
+    userId: string;
+    teamId: string;
+    roleName: RoleName;
+    status: string;
+    createdAt: Date;
+    updatedAt: Date;
+  };
   previousRole: RoleName;
   newRole: RoleName;
 }
@@ -158,8 +166,20 @@ export const updateUserRole = async (
     .populate('userId', 'name email avatar')
     .populate('roleId', 'name displayName description');
 
+  if (!updatedUserRole) {
+    throw new AppError(httpStatus.NOT_FOUND, 'User role not found after update');
+  }
+
   return {
-    userRole: updatedUserRole,
+    userRole: {
+      _id: updatedUserRole._id.toString(),
+      userId: updatedUserRole.userId.toString(),
+      teamId: updatedUserRole.teamId.toString(),
+      roleName: updatedUserRole.roleName,
+      status: updatedUserRole.status,
+      createdAt: updatedUserRole.createdAt,
+      updatedAt: updatedUserRole.updatedAt,
+    },
     previousRole,
     newRole: newRoleName,
   };
@@ -171,7 +191,15 @@ export const updateUserRole = async (
 export const getUserRoleInTeam = async (
   userId: string,
   teamId: string
-): Promise<any> => {
+): Promise<{
+  _id: string;
+  userId: string;
+  teamId: string;
+  roleName: RoleName;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+} | null> => {
   const userRole = await UserRole.findOne({
     userId: userId,
     teamId: teamId,
@@ -181,5 +209,17 @@ export const getUserRoleInTeam = async (
     .populate('roleId', 'name displayName description')
     .populate('teamId', 'name sport season');
 
-  return userRole;
+  if (!userRole) {
+    return null;
+  }
+
+  return {
+    _id: userRole._id.toString(),
+    userId: userRole.userId.toString(),
+    teamId: userRole.teamId.toString(),
+    roleName: userRole.roleName,
+    status: userRole.status,
+    createdAt: userRole.createdAt,
+    updatedAt: userRole.updatedAt,
+  };
 };

@@ -14,8 +14,9 @@ function asyncWrapper(handler: AsyncRequestHandler): AsyncRequestHandler {
   return async (req, res, next) => {
     try {
       await handler(req, res, next);
-    } catch (error: any) {
-      logger.error(error.message || error);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(errorMessage);
       next(error);
     }
   };

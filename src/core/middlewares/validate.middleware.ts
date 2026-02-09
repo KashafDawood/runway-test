@@ -10,8 +10,8 @@ export interface ValidationSchema {
 }
 
 const validate = (schema: ValidationSchema) => (req: Request, res: Response, next: NextFunction) => {
-  const pickObjectKeysWithValue = (object: any, keys: string[]) =>
-    keys.reduce((o: any, k: string) => {
+  const pickObjectKeysWithValue = (object: Record<string, unknown>, keys: string[]) =>
+    keys.reduce((o: Record<string, unknown>, k: string) => {
       o[k] = object[k];
       return o;
     }, {});
@@ -25,8 +25,13 @@ const validate = (schema: ValidationSchema) => (req: Request, res: Response, nex
     throw new AppError(httpStatus.INTERNAL_SERVER_ERROR, e, false);
   }
 
-  const validSchema = pickObjectKeysWithValue(schema, filterOutNotValidSchemaKeys);
-  const object = pickObjectKeysWithValue(req, Object.keys(validSchema));
+  const validSchema = pickObjectKeysWithValue(schema as Record<string, unknown>, filterOutNotValidSchemaKeys);
+  const reqData: Record<string, unknown> = {
+    params: req.params,
+    query: req.query,
+    body: req.body,
+  };
+  const object = pickObjectKeysWithValue(reqData, Object.keys(validSchema));
 
   const { value, error } = Joi.compile(validSchema)
     .prefs({ errors: { label: 'key' } })
