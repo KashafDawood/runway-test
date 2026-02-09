@@ -39,7 +39,18 @@ interface IAuthResponse {
     role: RoleName;
   };
   token: string;
-  verificationToken?: string; // For testing email verification
+  verificationCode?: string; // For testing email verification
+}
+
+/**
+ * Generate a random 6 digit verification code
+ */
+const generateVerificationCode = (): string => {
+  // Generate a random 6-digit number (100000 to 999999)
+  const min = 100000;
+  const max = 999999;
+  const code = Math.floor(Math.random() * (max - min + 1)) + min;
+  return code.toString();
 }
 
 export const signUp = async (input: ISignUpInput): Promise<IAuthResponse> => {
@@ -99,23 +110,22 @@ export const signUp = async (input: ISignUpInput): Promise<IAuthResponse> => {
     });
   }
 
-  // Generate email verification token
-  const verificationToken = crypto.randomBytes(32).toString('hex');
+  // Generate email verification code (4-6 digits)
+  const verificationCode = generateVerificationCode();
   const expiresAt = new Date(Date.now() + TOKEN_EXPIRY.EMAIL_VERIFICATION);
 
   await TokenModel.create({
     user: user._id,
-    token: verificationToken,
+    token: verificationCode,
     type: TOKEN_TYPES.EMAIL_VERIFICATION,
     expires_at: expiresAt,
   });
 
   // Send verification email
-  const verificationUrl = `${config.app.frontEndUrl}/verify-email?token=${verificationToken}`;
   try {
     await sendEmail('verifyEmail', email, {
       name: user.name,
-      url: verificationUrl,
+      code: verificationCode,
     });
   } catch (error) {
     logger.error('Failed to send verification email', error);
@@ -142,7 +152,7 @@ export const signUp = async (input: ISignUpInput): Promise<IAuthResponse> => {
       role: RoleName.COACH
     } : undefined,
     token,
-    verificationToken: config.app.isDev ? verificationToken : undefined,
+    verificationCode: config.app.isDev ? verificationCode : undefined,
   };
 };
 
@@ -191,26 +201,33 @@ export const signIn = async (email: string, password: string): Promise<IAuthResp
   };
 };
 
-export const verifyEmail = async (token: string): Promise<IAuthResponse> => {
-  // Find token
+export const verifyEmail = async (code: string, email: string): Promise<IAuthResponse> => {
+  // Find user by email
+  const user = await UserModel.findOne({ email });
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, 'User not found');
+  }
+
+  // Find verification code
   const tokenDoc = await TokenModel.findOne({
-    token,
+    user: user._id,
+    token: code,
     type: TOKEN_TYPES.EMAIL_VERIFICATION,
     expires_at: { $gt: new Date() },
   });
 
   if (!tokenDoc) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid or expired verification token');
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid or expired verification code');
   }
 
   // Update user
-  const user = await UserModel.findByIdAndUpdate(
-    tokenDoc.user,
+  const updatedUser = await UserModel.findByIdAndUpdate(
+    user._id,
     { email_verified: true },
     { new: true }
   );
 
-  if (!user) {
+  if (!updatedUser) {
     throw new AppError(httpStatus.NOT_FOUND, 'User not found');
   }
 
@@ -218,56 +235,66 @@ export const verifyEmail = async (token: string): Promise<IAuthResponse> => {
   await TokenModel.deleteOne({ _id: tokenDoc._id });
 
   // Generate new JWT with updated email_verified status
-  const jwtToken = await genAccessToken(user._id, {
-    email: user.email,
-    email_verified: user.email_verified,
+  const jwtToken = await genAccessToken(updatedUser._id, {
+    email: updatedUser.email,
+    email_verified: updatedUser.email_verified,
   });
 
   return {
     user: {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      email_verified: user.email_verified,
-      avatar: user.avatar,
+      id: updatedUser._id,
+      name: updatedUser.name,
+      email: updatedUser.email,
+      email_verified: updatedUser.email_verified,
+      avatar: updatedUser.avatar,
     },
     token: jwtToken,
   };
 };
 
-export const resendVerificationEmail = async (userId: string): Promise<void> => {
-  const user = await UserModel.findById(userId);
+export const resendVerificationEmail = async (userIdOrEmail?: string, email?: string): Promise<void> => {
+  let user;
+  
+  // If email is provided, find by email (for unauthenticated requests)
+  if (email) {
+    user = await UserModel.findOne({ email });
+  } else if (userIdOrEmail) {
+    // Otherwise, find by userId (for authenticated requests)
+    user = await UserModel.findById(userIdOrEmail);
+  } else {
+    throw new AppError(httpStatus.BAD_REQUEST, 'User identifier is required');
+  }
 
   if (!user) {
-    throw new AppError(httpStatus.NOT_FOUND, 'User not found');
+    // Don't reveal if user exists for security
+    return;
   }
 
   if (user.email_verified) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Email already verified');
   }
 
-  // Delete old verification tokens
+  // Delete old verification codes
   await TokenModel.deleteMany({
-    user: userId,
+    user: user._id,
     type: TOKEN_TYPES.EMAIL_VERIFICATION,
   });
 
-  // Generate new token
-  const verificationToken = crypto.randomBytes(32).toString('hex');
+  // Generate new verification code (4-6 digits)
+  const verificationCode = generateVerificationCode();
   const expiresAt = new Date(Date.now() + TOKEN_EXPIRY.EMAIL_VERIFICATION);
 
   await TokenModel.create({
     user: user._id,
-    token: verificationToken,
+    token: verificationCode,
     type: TOKEN_TYPES.EMAIL_VERIFICATION,
     expires_at: expiresAt,
   });
 
   // Send email
-  const verificationUrl = `${config.app.frontEndUrl}/verify-email?token=${verificationToken}`;
   await sendEmail('verifyEmail', user.email, {
     name: user.name,
-    url: verificationUrl,
+    code: verificationCode,
   });
 };
 

@@ -34,9 +34,9 @@ export const signIn = asyncWrapper(async (req: Request, res: Response) => {
 });
 
 export const verifyEmail = asyncWrapper(async (req: Request, res: Response) => {
-  const { token } = req.body;
+  const { code, email } = req.body;
 
-  const result = await authService.verifyEmail(token);
+  const result = await authService.verifyEmail(code, email);
 
   logger.info(`Email verified successfully for user: ${result.user.email}`);
 
@@ -49,12 +49,17 @@ export const verifyEmail = asyncWrapper(async (req: Request, res: Response) => {
 
 export const resendVerificationEmail = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
+  const { email } = req.body;
 
-  if (!userId) {
-    throw new AppError(httpStatus.UNAUTHORIZED, 'Unauthorized');
+  // Allow resend via email (for unauthenticated users) or userId (for authenticated users)
+  // If authenticated, prefer userId; otherwise require email
+  if (userId) {
+    await authService.resendVerificationEmail(userId);
+  } else if (email) {
+    await authService.resendVerificationEmail(undefined, email);
+  } else {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Email is required or authentication is required');
   }
-
-  await authService.resendVerificationEmail(userId);
 
   res.status(httpStatus.OK).json({
     success: true,

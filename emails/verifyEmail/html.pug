@@ -3,15 +3,12 @@ extends ../baseEmail
 block content
   h4 Greetings, #{name}!
   p Welcome to Runway Coach App! We're excited to have you on board.
-  p To get started, please verify your email address by clicking the button below:
+  p To get started, please verify your email address using the verification code below:
   
-  +button(url) Verify Email Address
+  .verification-code(style='text-align: center; margin: 30px 0; padding: 20px; background-color: #f3f4f6; border-radius: 8px; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #1f2937;')= code
   
-  .divider
+  p Enter this code in the verification page to complete your email verification.
   
-  p If the button doesn't work, you can copy and paste this link into your browser:
-  p(style='word-break: break-all; color: #4F46E5;')= url
-  
-  p This verification link will expire in 24 hours.
+  p This verification code will expire in 24 hours.
   
   p If you didn't create an account with Runway Coach App, please ignore this email.

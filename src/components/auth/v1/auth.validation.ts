@@ -40,8 +40,13 @@ export const signInValidation: ValidationSchema = {
 
 export const verifyEmailValidation: ValidationSchema = {
   body: Joi.object().keys({
-    token: Joi.string().required().messages({
-      'any.required': 'Verification token is required',
+    code: Joi.string().pattern(/^\d{6}$/).required().messages({
+      'string.pattern.base': 'Verification code must be exactly 6 digits',
+      'any.required': 'Verification code is required',
+    }),
+    email: Joi.string().email().required().messages({
+      'string.email': 'Please provide a valid email address',
+      'any.required': 'Email is required',
     }),
   }),
 };
@@ -63,6 +68,14 @@ export const resetPasswordValidation: ValidationSchema = {
     newPassword: Joi.string().min(6).required().messages({
       'string.min': 'Password must be at least 6 characters long',
       'any.required': 'New password is required',
+    }),
+  }),
+};
+
+export const resendVerificationValidation: ValidationSchema = {
+  body: Joi.object().keys({
+    email: Joi.string().email().optional().messages({
+      'string.email': 'Please provide a valid email address',
     }),
   }),
 };

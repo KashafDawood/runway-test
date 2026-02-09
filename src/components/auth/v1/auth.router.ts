@@ -2,7 +2,7 @@ import { Router } from 'express';
 import * as authController from './auth.controller';
 import validate from '@core/middlewares/validate.middleware';
 import * as authValidation from './auth.validation';
-import { verifyToken, requireEmailVerified } from './auth.middleware';
+import { verifyToken, requireEmailVerified, optionalVerifyToken } from './auth.middleware';
 
 const router: Router = Router();
 
@@ -29,8 +29,14 @@ router.post(
   authController.resetPassword
 );
 
+router.post(
+  '/resend-verification',
+  optionalVerifyToken,
+  validate(authValidation.resendVerificationValidation),
+  authController.resendVerificationEmail
+);
+
 // Protected routes
-router.post('/resend-verification', verifyToken, authController.resendVerificationEmail);
 
 router.get('/me', verifyToken, authController.getMe);
 

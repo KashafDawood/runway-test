@@ -39,6 +39,40 @@ export const verifyToken = asyncWrapper(
   },
 );
 
+/**
+ * Optional authentication middleware
+ * Attaches user to request if token is present, but doesn't throw error if missing
+ */
+export const optionalVerifyToken = asyncWrapper(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const authHeader = req.headers.authorization;
+
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.split("Bearer ")[1];
+
+      if (token) {
+        try {
+          // Verify token
+          const decoded = await verifyAccessToken(token);
+
+          // Get user from database
+          const user = await UserModel.findById(decoded._id);
+
+          if (user) {
+            // Attach user to request
+            req.user = user;
+          }
+        } catch (error) {
+          // Ignore token errors for optional auth
+          // User will remain undefined
+        }
+      }
+    }
+
+    next();
+  },
+);
+
 export const requireEmailVerified = asyncWrapper(
   async (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
