@@ -22,19 +22,16 @@ jobs:
       - name: Cache node modules
         uses: actions/cache@v3
         with:
-          path: Runway-Hemero-BE/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('Runway-Hemero-BE/package-lock.json') }}
+          path: node_modules
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
           restore-keys: |
-            ${{ runner.os }}-node-
+            ${{ runner.os }}-yarn-
 
       - name: Install dependencies
-        working-directory: ./Runway-Hemero-BE
-        run: npm ci
+        run: yarn install --frozen-lockfile
 
       - name: Run linter
-        working-directory: ./Runway-Hemero-BE
-        run: npm run lint
+        run: yarn lint
 
       - name: Build project
-        working-directory: ./Runway-Hemero-BE
-        run: npm run build
+        run: yarn build
