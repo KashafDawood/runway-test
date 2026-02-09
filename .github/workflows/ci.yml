@@ -19,16 +19,16 @@ jobs:
         with:
           node-version: '18.17.0'
           cache: 'npm'
-          cache-dependency-path: runway/package-lock.json
+          cache-dependency-path: Runway-Hemero-BE/package-lock.json
 
       - name: Install dependencies
-        working-directory: ./runway
+        working-directory: ./Runway-Hemero-BE
         run: npm ci
 
       - name: Run linter
-        working-directory: ./runway
+        working-directory: ./Runway-Hemero-BE
         run: npm run lint
 
       - name: Build project
-        working-directory: ./runway
+        working-directory: ./Runway-Hemero-BE
         run: npm run build
