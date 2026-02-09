@@ -53,25 +53,25 @@ export const checkInvite = asyncWrapper(async (req: Request, res: Response) => {
 /**
  * POST /api/v1/team-invites/accept
  * Accept team invite with role selection
- * Auto-registers user if they don't exist (with optional userData)
- * Can be called with or without authentication
+ * User must be authenticated and already exist
  */
 export const acceptInvite = asyncWrapper(async (req: Request, res: Response) => {
-  const userId = req.user?._id; // Optional - for existing users
-  const { token, role, userData } = req.body;
+  const userId = req.user?._id;
+  const { token, role } = req.body;
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
 
   const result = await teamInviteService.acceptInvite({
     token,
     role,
     userId,
-    userData
   });
 
   res.status(httpStatus.OK).json({
     success: true,
-    message: result.isNewUser 
-      ? 'Welcome! You\'ve successfully joined the team' 
-      : 'Invite accepted successfully',
+    message: 'Invite accepted successfully',
     data: result
   });
 });
@@ -89,6 +89,30 @@ export const getTeamInvites = asyncWrapper(async (req: Request, res: Response) =
   }
 
   const invites = await teamInviteService.getTeamInvites(teamId, userId);
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: invites
+  });
+});
+
+/**
+ * GET /api/v1/team-invites/my-invites
+ * Get all invites for the authenticated user
+ * Query params: status (optional) - filter by status: pending, accepted, declined, expired, cancelled
+ */
+export const getUserInvites = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  const { status } = req.query;
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
+
+  const invites = await teamInviteService.getUserInvites(
+    userId,
+    status as string | undefined
+  );
 
   res.status(httpStatus.OK).json({
     success: true,

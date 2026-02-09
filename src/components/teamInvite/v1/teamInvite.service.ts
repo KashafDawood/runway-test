@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import bcrypt from 'bcryptjs';
 import { Types } from 'mongoose';
 import { TeamInvite } from './teamInvite.model';
 import { InviteStatus, ITeamInvite } from './teamInvite.interface';
@@ -27,22 +26,10 @@ interface ICheckInviteInput {
   token: string;
 }
 
-interface ICompleteRegistrationInput {
-  token: string;
-  name: string;
-  password: string;
-  phone?: string;
-}
-
 interface IAcceptInviteInput {
   token: string;
   role: RoleName; // User chooses role
-  userId?: string; // For existing users (if authenticated)
-  userData?: {
-    name?: string;
-    password?: string;
-    phone?: string;
-  }; // Optional user data for auto-registration
+  userId: string; // Required - user must exist and be authenticated
 }
 
 interface IBatchInviteResult {
@@ -295,15 +282,13 @@ export const checkInvite = async (data: ICheckInviteInput): Promise<{
 
 /**
  * Accept team invite with role selection
- * Auto-registers user if they don't exist (with optional userData)
- * For existing users: Can call directly (but must be authenticated)
+ * User must already exist and be authenticated
  */
 export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
   invite: ITeamInvite;
   user: any;
-  isNewUser: boolean;
 }> => {
-  const { token, role, userId, userData } = data;
+  const { token, role, userId } = data;
 
   // Find invite by token
   const invite = await TeamInvite.findOne({ token })
@@ -335,91 +320,29 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid role selected');
   }
 
-  // Get or find user, auto-register if needed
-  let user;
-  let isNewUser = false;
+  // User must exist and be authenticated
+  if (!userId) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'User ID is required. User must be authenticated.');
+  }
 
-  if (userId) {
-    // Existing authenticated user
-    user = await UserModel.findById(userId);
-    if (!user) {
-      throw new AppError(httpStatus.NOT_FOUND, 'User not found');
-    }
+  // Find user
+  const user = await UserModel.findById(userId);
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, 'User not found');
+  }
 
-    // Verify email matches
-    if (user.email.toLowerCase() !== invite.email.toLowerCase()) {
-      throw new AppError(
-        httpStatus.FORBIDDEN,
-        'This invite is for a different email address'
-      );
-    }
+  // Verify email matches invite
+  if (user.email.toLowerCase() !== invite.email.toLowerCase()) {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      'This invite is for a different email address'
+    );
+  }
 
-    // Optionally update profile data if provided
-    let needsSave = false;
-    if (userData?.name && !user.name) {
-      user.name = userData.name;
-      needsSave = true;
-    }
-    if (userData?.phone && !user.phone) {
-      user.phone = userData.phone;
-      needsSave = true;
-    }
-    
-    // Ensure email is verified
-    if (!user.email_verified) {
-      user.email_verified = true;
-      needsSave = true;
-    }
-
-    if (needsSave) {
-      await user.save();
-    }
-  } else {
-    // Check if user exists
-    user = await UserModel.findOne({ email: invite.email.toLowerCase() });
-    
-    if (!user) {
-      // AUTO-REGISTER: Create user if they don't exist
-      isNewUser = true;
-
-      // Generate random password if not provided (user can reset later)
-      const passwordToUse = userData?.password || crypto.randomBytes(16).toString('hex');
-      const hashedPassword = await bcrypt.hash(passwordToUse, 10);
-
-      // Use provided name or default to email prefix
-      const userName = userData?.name || invite.email.split('@')[0];
-
-      user = await UserModel.create({
-        email: invite.email.toLowerCase(),
-        name: userName,
-        password: hashedPassword,
-        email_verified: true, // Auto-verify email via invite
-        phone: userData?.phone || undefined
-      });
-
-      logger.info(`Auto-registered user: ${user._id} (${user.email}) via team invite`);
-    } else {
-      // EXISTING USER: Optionally update profile data
-      let needsSave = false;
-      if (userData?.name && !user.name) {
-        user.name = userData.name;
-        needsSave = true;
-      }
-      if (userData?.phone && !user.phone) {
-        user.phone = userData.phone;
-        needsSave = true;
-      }
-      
-      // Ensure email is verified (in case it wasn't before)
-      if (!user.email_verified) {
-        user.email_verified = true;
-        needsSave = true;
-      }
-
-      if (needsSave) {
-        await user.save();
-      }
-    }
+  // Ensure email is verified
+  if (!user.email_verified) {
+    user.email_verified = true;
+    await user.save();
   }
 
   // Check if user is already a member
@@ -438,6 +361,23 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     await invite.save();
 
     throw new AppError(httpStatus.CONFLICT, INVITE_ERRORS.ALREADY_MEMBER);
+  }
+
+  // SECURITY: Prevent adding multiple coaches to a team
+  // Each team can only have ONE coach
+  if (role === RoleName.COACH) {
+    const existingCoach = await UserRole.findOne({
+      teamId: invite.teamId,
+      roleName: RoleName.COACH,
+      status: UserRoleStatus.ACTIVE
+    });
+
+    if (existingCoach) {
+      throw new AppError(
+        httpStatus.CONFLICT,
+        'This team already has a coach. Only one coach is allowed per team.'
+      );
+    }
   }
 
   // Create UserRole (add user to team with chosen role)
@@ -476,7 +416,7 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
   await invite.save();
 
   logger.info(
-    `Invite accepted: ${invite._id} by user ${user._id} (${isNewUser ? 'NEW' : 'EXISTING'}) with role ${role}`
+    `Invite accepted: ${invite._id} by user ${user._id} with role ${role}`
   );
 
   // Remove password from response
@@ -485,8 +425,7 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
 
   return {
     invite,
-    user: userObj,
-    isNewUser
+    user: userObj
   };
 };
 
@@ -509,6 +448,48 @@ export const getTeamInvites = async (
   }
 
   const invites = await TeamInvite.find({ teamId })
+    .populate('invitedBy', 'name email')
+    .populate('acceptedBy', 'name email')
+    .sort({ createdAt: -1 });
+
+  return invites;
+};
+
+/**
+ * Get all invites for a user (by user ID)
+ * Returns all invites sent to the user's email address
+ * @param userId - User ID
+ * @param status - Optional status filter (pending, accepted, declined, expired, cancelled)
+ */
+export const getUserInvites = async (
+  userId: string,
+  status?: string
+): Promise<ITeamInvite[]> => {
+  // Get user to find their email
+  const user = await UserModel.findById(userId);
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, 'User not found');
+  }
+
+  // Build query filter
+  const queryFilter: any = { 
+    email: user.email.toLowerCase() 
+  };
+
+  // Add status filter if provided (validate it's a valid InviteStatus)
+  if (status) {
+    if (!Object.values(InviteStatus).includes(status as InviteStatus)) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        `Invalid status. Must be one of: ${Object.values(InviteStatus).join(', ')}`
+      );
+    }
+    queryFilter.status = status as InviteStatus;
+  }
+
+  // Find all invites for this user's email
+  const invites = await TeamInvite.find(queryFilter)
+    .populate('teamId', 'name sport season')
     .populate('invitedBy', 'name email')
     .populate('acceptedBy', 'name email')
     .sort({ createdAt: -1 });

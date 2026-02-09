@@ -26,7 +26,7 @@ router.post(
   '/',
   verifyToken,
   requireEmailVerified,
-  validate(teamValidation.createTeamSchema),
+  // validate(teamValidation.createTeamSchema),
   teamController.createTeam
 );
 

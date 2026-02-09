@@ -278,6 +278,23 @@ export const addTeamMember = async (
     );
   }
 
+  // SECURITY: Prevent adding multiple coaches to a team
+  // Each team can only have ONE coach
+  if (role === RoleName.COACH) {
+    const existingCoach = await UserRole.findOne({
+      teamId,
+      roleName: RoleName.COACH,
+      status: UserRoleStatus.ACTIVE
+    });
+
+    if (existingCoach) {
+      throw new AppError(
+        httpStatus.CONFLICT,
+        'This team already has a coach. Only one coach is allowed per team.'
+      );
+    }
+  }
+
   // Add member with specified role
   const roleDoc = await Role.findOne({ name: role });
   if (!roleDoc) {

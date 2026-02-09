@@ -20,11 +20,19 @@ interface ISignUpInput {
   email: string;
   password: string;
   name: string;
-  teamName?: string; // Optional - coach can create team later
-  sport?: string;
-  season?: string;
 }
 
+interface ISignUpResponse {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    email_verified: boolean;
+    avatar?: string;
+  };
+  token: string;
+  verificationCode?: string; // For testing email verification
+}
 interface IAuthResponse {
   user: {
     id: string;
@@ -53,8 +61,8 @@ const generateVerificationCode = (): string => {
   return code.toString();
 }
 
-export const signUp = async (input: ISignUpInput): Promise<IAuthResponse> => {
-  const { email, password, name, teamName, sport, season } = input;
+export const signUp = async (input: ISignUpInput): Promise<ISignUpResponse> => {
+  const { email, password, name } = input;
 
   // Check if user already exists
   const existingUser = await UserModel.findOne({ email });
@@ -73,42 +81,8 @@ export const signUp = async (input: ISignUpInput): Promise<IAuthResponse> => {
     email_verified: false,
   });
 
-  let team;
-  let userRole;
-
-  // Create team if teamName provided (optional)
-  if (teamName) {
-    // Get coach role
-    const coachRole = await Role.findOne({ name: RoleName.COACH });
-    if (!coachRole) {
-      throw new AppError(
-        httpStatus.INTERNAL_SERVER_ERROR,
-        'Coach role not found. Please run database seeder.'
-      );
-    }
-
-    // Create team
-    team = await Team.create({
-      name: teamName,
-      sport: sport || '',
-      season: season || '',
-      createdBy: user._id,
-      settings: {
-        allowPlayerInvites: false,
-        requireGuardianApproval: true
-      }
-    });
-
-    // Assign coach role to user in team
-    userRole = await UserRole.create({
-      userId: user._id,
-      teamId: team._id,
-      roleId: coachRole._id,
-      roleName: RoleName.COACH,
-      status: UserRoleStatus.ACTIVE,
-      joinedAt: new Date()
-    });
-  }
+  // No role assignment at signup - roles will be assigned after verification
+  // via "create team" (COACH) or "join team" (PLAYER) actions
 
   // Generate email verification code (4-6 digits)
   const verificationCode = generateVerificationCode();
@@ -146,11 +120,6 @@ export const signUp = async (input: ISignUpInput): Promise<IAuthResponse> => {
       email_verified: user.email_verified,
       avatar: user.avatar,
     },
-    team: team ? {
-      id: team._id,
-      name: team.name,
-      role: RoleName.COACH
-    } : undefined,
     token,
     verificationCode: config.app.isDev ? verificationCode : undefined,
   };

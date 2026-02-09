@@ -127,6 +127,23 @@ export const updateUserRole = async (
     }
   }
 
+  // 8b. SECURITY: Prevent adding multiple coaches to a team
+  // Each team can only have ONE coach
+  if (newRoleName === RoleName.COACH && existingUserRole.roleName !== RoleName.COACH) {
+    const existingCoach = await UserRole.findOne({
+      teamId: teamId,
+      roleName: RoleName.COACH,
+      status: UserRoleStatus.ACTIVE,
+    });
+
+    if (existingCoach) {
+      throw new AppError(
+        httpStatus.CONFLICT,
+        'This team already has a coach. Only one coach is allowed per team.'
+      );
+    }
+  }
+
   // 9. Store previous role for response
   const previousRole = existingUserRole.roleName;
 

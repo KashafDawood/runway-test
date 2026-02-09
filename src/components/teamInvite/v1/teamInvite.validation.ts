@@ -100,3 +100,14 @@ export const cancelInviteSchema: ValidationSchema = {
       })
   })
 };
+
+export const getUserInvitesSchema: ValidationSchema = {
+  query: Joi.object({
+    status: Joi.string()
+      .valid('pending', 'accepted', 'declined', 'expired', 'cancelled')
+      .optional()
+      .messages({
+        'any.only': 'Status must be one of: pending, accepted, declined, expired, cancelled'
+      })
+  })
+};

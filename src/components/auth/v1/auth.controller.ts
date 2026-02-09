@@ -6,9 +6,9 @@ import * as authService from './auth.service';
 import logger from '@core/utils/logger';
 
 export const signUp = asyncWrapper(async (req: Request, res: Response) => {
-  const { email, password, name, teamName, sport, season } = req.body;
+  const { email, password, name, } = req.body;
 
-  const result = await authService.signUp({ email, password, name, teamName, sport, season });
+  const result = await authService.signUp({ email, password, name });
 
   logger.info(`User signed up successfully: ${email}`);
 

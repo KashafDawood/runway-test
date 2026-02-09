@@ -39,14 +39,31 @@ router.get(
 );
 
 /**
- * ACCEPT INVITE (Combined: Check + Register if needed + Accept)
+ * ACCEPT INVITE
  * POST /api/v1/team-invites/accept
+ * User must be authenticated
  */
 router.post(
   '/accept',
+  verifyToken,
   validate(teamInviteValidation.acceptInviteSchema),
   teamInviteController.acceptInvite
 );
+
+/**
+ * GET USER INVITES
+ * GET /api/v1/team-invites/my-invites?status=pending
+ * 
+ * Get all invites for the authenticated user
+ * Optional query param: status (pending, accepted, declined, expired, cancelled)
+ */
+router.get(
+  '/my-invites',
+  verifyToken,
+  validate(teamInviteValidation.getUserInvitesSchema),
+  teamInviteController.getUserInvites
+);
+
 /**
  * GET TEAM INVITES
  * GET /api/v1/team-invites/:teamId/invites
