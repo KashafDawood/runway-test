@@ -19,10 +19,13 @@ export enum SystemEventKind {
 /**
  * Standard meta for system messages (type === SYSTEM).
  * - eventKind: required for typed system messages
- * - Optional payload: eventId, paymentRequestId, noteId, title, etc.
+ * - Optional payload: teamId, eventId, paymentRequestId, noteId, title, etc.
+ * - For GAME_NOTES_PUBLISHED: teamId + eventId allow building link to notes screen (e.g. /teams/:teamId/events/:eventId/notes).
+ * - System messages are read-only; clients must not allow edit/delete for type === SYSTEM.
  */
 export interface SystemMessageMeta {
   eventKind: SystemEventKind;
+  teamId?: string;
   eventId?: string;
   paymentRequestId?: string;
   noteId?: string;

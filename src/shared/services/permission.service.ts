@@ -2,6 +2,7 @@ import { UserRole } from "../../components/userRole/v1/userRole.model";
 import { GuardianLink } from "../../components/guardianLink/v1/guardianLink.model";
 import { RoleName } from "../../components/role/v1/role.interface";
 import { GuardianLinkStatus } from "../../components/guardianLink/v1/guardianLink.interface";
+import { Player } from "../../components/player/v1/player.model";
 import {
   Resource,
   Action,
@@ -271,10 +272,18 @@ export class PermissionService {
       case Action.VIEW:
         // Admins see all
         if (isAdmin) return { allowed: true };
-        // Players see own notes only
+        // Players see own notes only - verify playerId belongs to this user in this team
         if (userRole === RoleName.PLAYER && playerId) {
-          // TODO: Verify playerId belongs to userId
-          return { allowed: true };
+          const player = await Player.findOne({
+            _id: playerId,
+            teamId,
+            userId,
+          }).select("_id");
+
+          return {
+            allowed: !!player,
+            reason: !player ? "Not allowed to view notes for this player" : undefined,
+          };
         }
         // Guardians see linked player notes
         if (playerId && userRole === RoleName.GUARDIAN) {
@@ -363,19 +372,26 @@ export class PermissionService {
         return { allowed: false };
 
       case Action.CREATE:
-        // Guardians can request links
-        return { allowed: userRole === RoleName.GUARDIAN };
+        // Guardians and players can request links
+        if (userRole === RoleName.GUARDIAN || userRole === RoleName.PLAYER) {
+          return { allowed: true };
+        }
+        return { allowed: false };
 
       case Action.APPROVE:
-        // Admins can approve any, players can approve own
-        if (isAdmin) return { allowed: true };
-        if (targetUserId === userId) return { allowed: true };
+        // Only the non-requesting side (guardian or player) can respond
+        // Coaches/assistant coaches CANNOT approve/reject
+        if (targetUserId === userId) {
+          return { allowed: true };
+        }
         return { allowed: false };
 
       case Action.DELETE:
-        // Admins can remove any, users can remove own
-        if (isAdmin) return { allowed: true };
-        if (targetUserId === userId) return { allowed: true };
+        // Only the directly involved user can remove their own link
+        // (e.g. guardian removing their link)
+        if (targetUserId === userId) {
+          return { allowed: true };
+        }
         return { allowed: false };
 
       default:

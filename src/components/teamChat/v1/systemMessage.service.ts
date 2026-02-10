@@ -22,7 +22,7 @@ function getSystemMessageText(
     case SystemEventKind.PAYMENT_REQUEST_CREATED:
       return 'Payment request created';
     case SystemEventKind.GAME_NOTES_PUBLISHED:
-      return 'Game notes published';
+      return 'Coach posted game notes';
     default:
       return 'System notification';
   }
@@ -31,10 +31,12 @@ function getSystemMessageText(
 /**
  * Post a system message for a key action. Internal API for backend services.
  * When Event/Payment/GameNote components exist, call this after create/publish.
+ * For GAME_NOTES_PUBLISHED, include teamId and eventId in payload so the chat UI
+ * can link the message to the notes screen (e.g. /teams/:teamId/events/:eventId/notes).
  *
  * @param teamId - Team chat to post to
  * @param eventKind - One of event_created, payment_request_created, game_notes_published
- * @param payload - Optional payload (eventId, title, paymentRequestId, noteId, etc.)
+ * @param payload - Optional payload (teamId, eventId, title, paymentRequestId, noteId, etc.)
  */
 export async function postSystemMessage(
   teamId: string,

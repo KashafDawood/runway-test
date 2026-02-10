@@ -1,10 +1,23 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import AppError from '@core/utils/appError';
-import { TeamMessage, } from './teamChat.model';
+import { TeamMessage } from './teamChat.model';
 import { ITeamMessage, SystemMessageMeta, TeamMessageType } from './teamChat.interface';
 import { getTeamChatGateway } from './teamChat.gateway';
 import UserModel from '@components/user/v1/user.model';
+
+/**
+ * Throws if the message is a system message. Use in any PATCH/DELETE message handler
+ * to prevent user edits of "Coach posted game notes" and other system messages.
+ */
+export function assertMessageCanBeModified(message: ITeamMessage): void {
+  if (message.type === TeamMessageType.SYSTEM) {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      'System messages cannot be modified or deleted'
+    );
+  }
+}
 
 interface CreateUserMessageInput {
   teamId: string;
