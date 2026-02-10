@@ -196,7 +196,12 @@ export const listGuardianLinksForUser = async (
 
   const roleName = membership.roleName as RoleName;
 
-  const baseFilter: Record<string, any> = {
+  const baseFilter: {
+    teamId: Types.ObjectId;
+    status: { $ne: GuardianLinkStatus };
+    guardianId?: Types.ObjectId | string;
+    playerId?: Types.ObjectId | string;
+  } = {
     teamId: new Types.ObjectId(teamId),
     status: { $ne: GuardianLinkStatus.REMOVED }
   };
