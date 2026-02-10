@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from "express";
+import { Response, NextFunction } from "express";
 import httpStatus from "http-status";
 import asyncWrapper from "@core/utils/asyncWrapper";
 import AppError from "@core/utils/appError";
@@ -7,9 +7,10 @@ import UserModel from "@components/user/v1/user.model";
 import { UserRole } from "@components/userRole/v1/userRole.model";
 import { RoleName } from "@components/role/v1/role.interface";
 import { UserRoleStatus } from "@components/userRole/v1/userRole.interface";
+import { RequestWithContext } from "types/request";
 
 export const verifyToken = asyncWrapper(
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: RequestWithContext, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -44,7 +45,7 @@ export const verifyToken = asyncWrapper(
  * Attaches user to request if token is present, but doesn't throw error if missing
  */
 export const optionalVerifyToken = asyncWrapper(
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: RequestWithContext, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
 
     if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -74,7 +75,7 @@ export const optionalVerifyToken = asyncWrapper(
 );
 
 export const requireEmailVerified = asyncWrapper(
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: RequestWithContext, res: Response, next: NextFunction) => {
     if (!req.user) {
       throw new AppError(httpStatus.UNAUTHORIZED, "Authentication required");
     }
@@ -95,7 +96,7 @@ export const requireEmailVerified = asyncWrapper(
  * Middleware to ensure teamId is available
  */
 export const extractTeamContext = asyncWrapper(
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: RequestWithContext, res: Response, next: NextFunction) => {
     let teamId = req.params.teamId || req.query.teamId || req.body.teamId;
 
     // if teamid is not provided in the requrest fallback to active team id
@@ -127,7 +128,7 @@ export const extractTeamContext = asyncWrapper(
  * Does not throw error if activeTeamId is not set (unlike extractTeamContext)
  */
 export const useActiveTeamContext = asyncWrapper(
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: RequestWithContext, res: Response, next: NextFunction) => {
     // only set if team id not already in request
     if (!req.teamId && req.user ) {
       const user = await UserModel.findById(req.user._id).select('activeTeamId');
@@ -144,7 +145,7 @@ export const useActiveTeamContext = asyncWrapper(
  * Throws error if user has no activeTeamId
  */
 export const requireActiveTeam = asyncWrapper(
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: RequestWithContext, res: Response, next: NextFunction) => {
     if (!req.user) {
       throw new AppError(httpStatus.UNAUTHORIZED, "Authentication required");
     }
@@ -174,7 +175,7 @@ export const requireActiveTeam = asyncWrapper(
  */
 export const requireTeamRole = (...allowedRoles: RoleName[]) => {
   return asyncWrapper(
-    async (req: Request, res: Response, next: NextFunction) => {
+    async (req: RequestWithContext, res: Response, next: NextFunction) => {
       if (!req.user) {
         throw new AppError(httpStatus.UNAUTHORIZED, "Authentication required");
       }
@@ -227,7 +228,7 @@ export const requireTeamAdmin = requireTeamRole(
  * Check if user is a member of team (any role)
  */
 export const requireTeamMember = asyncWrapper(
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: RequestWithContext, res: Response, next: NextFunction) => {
     if (!req.user) {
       throw new AppError(httpStatus.UNAUTHORIZED, "Authentication required");
     }

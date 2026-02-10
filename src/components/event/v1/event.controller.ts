@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import httpStatus from 'http-status';
 import asyncWrapper from '@core/utils/asyncWrapper';
 import AppError from '@core/utils/appError';
@@ -11,12 +11,13 @@ import { EventType } from './event.interface';
 import { permissionService } from '@shared/services/permission.service';
 import { Resource, Action } from '@shared/types/permission.types';
 import { RoleName } from '@components/role/v1/role.interface';
+import { RequestWithContext } from 'types/request';
 
 /**
  * POST /api/v1/teams-event/:teamId/events
  * Create event (admin only). Posts system message to team chat on success.
  */
-export const createEvent = asyncWrapper(async (req: Request, res: Response) => {
+export const createEvent = asyncWrapper(async (req: RequestWithContext, res: Response) => {
   const userId = req.user?._id;
   const { teamId } = req.params;
   const body = req.body as {
@@ -73,7 +74,7 @@ export const createEvent = asyncWrapper(async (req: Request, res: Response) => {
  * Detailed event view: event details, metadata (allDay, durationMinutes, typeLabel), and RSVP summary (counts).
  * Works for all roles (read-only).
  */
-export const getEvent = asyncWrapper(async (req: Request, res: Response) => {
+export const getEvent = asyncWrapper(async (req: RequestWithContext, res: Response) => {
   const { teamId, eventId } = req.params;
 
   if (!teamId || !eventId) {
@@ -121,7 +122,7 @@ export const getEvent = asyncWrapper(async (req: Request, res: Response) => {
  * PUT /api/v1/teams-event/:teamId/events/:eventId
  * Update event (admin only).
  */
-export const updateEvent = asyncWrapper(async (req: Request, res: Response) => {
+export const updateEvent = asyncWrapper(async (req: RequestWithContext, res: Response) => {
   const { teamId, eventId } = req.params;
   const body = req.body as {
     type?: EventType;
@@ -178,7 +179,7 @@ export const updateEvent = asyncWrapper(async (req: Request, res: Response) => {
  * DELETE /api/v1/teams-event/:teamId/events/:eventId
  * Delete event (admin only).
  */
-export const deleteEvent = asyncWrapper(async (req: Request, res: Response) => {
+export const deleteEvent = asyncWrapper(async (req: RequestWithContext, res: Response) => {
   const { teamId, eventId } = req.params;
 
   if (!teamId || !eventId) {
@@ -194,7 +195,7 @@ export const deleteEvent = asyncWrapper(async (req: Request, res: Response) => {
  * Or ?view=month|week|day&date=ISO for calendar view (rangeStart, rangeEnd, groupedByDay, meta).
  * List events for team (team member). start/end optional; if omitted returns all events. Paginated unless view+date used.
  */
-export const getEventsByDateRange = asyncWrapper(async (req: Request, res: Response) => {
+export const getEventsByDateRange = asyncWrapper(async (req: RequestWithContext, res: Response) => {
   const { teamId } = req.params;
   const { start, end, page, limit, view, date } = req.query as {
     start?: string;
@@ -265,7 +266,7 @@ export const getEventsByDateRange = asyncWrapper(async (req: Request, res: Respo
  * If teamIds omitted, returns events for all teams the user is a member of.
  * start/end optional; paginated unless view+date used.
  */
-export const getEventsBroadView = asyncWrapper(async (req: Request, res: Response) => {
+export const getEventsBroadView = asyncWrapper(async (req: RequestWithContext, res: Response) => {
   const userId = req.user?._id;
   const { teamIds, start, end, page, limit, view, date } = req.query as {
     teamIds?: string | string[];
@@ -360,7 +361,7 @@ export const getEventsBroadView = asyncWrapper(async (req: Request, res: Respons
  * PUT /api/v1/teams-event/:teamId/events/:eventId/rsvp
  * Create or update RSVP (player or guardian only). Last action wins.
  */
-export const putRsvp = asyncWrapper(async (req: Request, res: Response) => {
+export const putRsvp = asyncWrapper(async (req: RequestWithContext, res: Response) => {
   const userId = req.user?._id;
   const teamId = req.teamId as string;
   const userTeamRole = req.userTeamRole as RoleName;
@@ -427,7 +428,7 @@ export const putRsvp = asyncWrapper(async (req: Request, res: Response) => {
  * Get RSVP for event. Player: own (no playerId). Guardian: playerId required.
  * Coach: any playerId or omit for summary via other endpoint.
  */
-export const getRsvp = asyncWrapper(async (req: Request, res: Response) => {
+export const getRsvp = asyncWrapper(async (req: RequestWithContext, res: Response) => {
   const userId = req.user?._id;
   const teamId = req.teamId as string;
   const userTeamRole = req.userTeamRole as RoleName;
@@ -493,7 +494,7 @@ export const getRsvp = asyncWrapper(async (req: Request, res: Response) => {
  * GET /api/v1/teams-event/:teamId/events/:eventId/rsvp/summary
  * RSVP aggregation for event (coach/assistant only).
  */
-export const getRsvpSummary = asyncWrapper(async (req: Request, res: Response) => {
+export const getRsvpSummary = asyncWrapper(async (req: RequestWithContext, res: Response) => {
   const { teamId, eventId } = req.params;
 
   if (!teamId || !eventId) {
@@ -514,7 +515,7 @@ export const getRsvpSummary = asyncWrapper(async (req: Request, res: Response) =
  * PUT /api/v1/teams-event/:teamId/events/:eventId/attendance
  * Mark attendance (present/absent) for a player. Coach/assistant only.
  */
-export const putAttendance = asyncWrapper(async (req: Request, res: Response) => {
+export const putAttendance = asyncWrapper(async (req: RequestWithContext, res: Response) => {
   const userId = req.user?._id;
   const teamId = req.teamId as string;
   const { eventId } = req.params;
@@ -560,7 +561,7 @@ export const putAttendance = asyncWrapper(async (req: Request, res: Response) =>
  * GET /api/v1/teams-event/:teamId/events/:eventId/attendance/participants?search=...
  * Search-first participant list for event. Coach/assistant only.
  */
-export const getAttendanceParticipants = asyncWrapper(async (req: Request, res: Response) => {
+export const getAttendanceParticipants = asyncWrapper(async (req: RequestWithContext, res: Response) => {
   const userId = req.user?._id;
   const teamId = req.teamId as string;
   const { eventId } = req.params;
@@ -599,7 +600,7 @@ export const getAttendanceParticipants = asyncWrapper(async (req: Request, res: 
  * GET /api/v1/teams-event/:teamId/events/:eventId/attendance/summary
  * Attendance summary for event (present/absent/unmarked). Coach/assistant only.
  */
-export const getAttendanceSummary = asyncWrapper(async (req: Request, res: Response) => {
+export const getAttendanceSummary = asyncWrapper(async (req: RequestWithContext, res: Response) => {
   const userId = req.user?._id;
   const teamId = req.teamId as string;
   const { eventId } = req.params;
@@ -635,7 +636,7 @@ export const getAttendanceSummary = asyncWrapper(async (req: Request, res: Respo
  * GET /api/v1/teams-event/:teamId/events/:eventId/attendance?playerId=...
  * Get attendance for event. Coach: any playerId. Player: own. Guardian: linked playerId.
  */
-export const getAttendance = asyncWrapper(async (req: Request, res: Response) => {
+export const getAttendance = asyncWrapper(async (req: RequestWithContext, res: Response) => {
   const userId = req.user?._id;
   const teamId = req.teamId as string;
   const userTeamRole = req.userTeamRole as RoleName;
