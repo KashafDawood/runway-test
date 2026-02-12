@@ -9,6 +9,8 @@ import teamChatRouter from '@components/teamChat/v1/teamChat.router';
 import eventRouter from '@components/event/v1/event.router';
 import gameNoteRouter from '@components/gameNote/v1/gameNote.router';
 import guardianLinkRouter from '@components/guardianLink/v1/guardianLink.router';
+import notificationRouter from '@components/notification/v1/notification.router';
+import userRouter from '@components/user/v1/user.router';
 
 const router: Router = Router();
 router.use('/health', health);
@@ -20,5 +22,7 @@ router.use('/user-roles', userRoleRouter);
 router.use('/teams-chat', teamChatRouter);
 router.use('/teams-event', eventRouter);
 router.use('/game-notes', gameNoteRouter);
+router.use('/notifications', notificationRouter);
+router.use('/users', userRouter);
 
 export default router;

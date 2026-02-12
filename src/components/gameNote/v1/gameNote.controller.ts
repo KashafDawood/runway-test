@@ -7,6 +7,10 @@ import { RoleName } from '@components/role/v1/role.interface';
 import * as gameNoteService from './gameNote.service';
 import { postSystemMessage } from '@components/teamChat/v1/systemMessage.service';
 import { SystemEventKind } from '@components/teamChat/v1/teamChat.interface';
+import { Team } from '@components/team/v1/team.model';
+import { Event } from '@components/event/v1/event.model';
+import { notifyGameNotesPublished } from '@components/notification/v1/notificationDelivery.service';
+import logger from '@core/utils/logger';
 
 /**
  * POST /api/v1/teams-event/:teamId/events/:eventId/notes/team
@@ -43,9 +47,26 @@ export const upsertTeamNote = asyncWrapper(async (req: RequestWithContext, res: 
       noteId: note.id
     });
   } catch (err) {
-    // Do not fail the request if chat notification fails
-    // eslint-disable-next-line no-console
-    console.error('Failed to post system message for game notes published:', err);
+    logger.error('Failed to post system message for game notes published', err);
+  }
+
+  try {
+    const [team, eventDoc] = await Promise.all([
+      Team.findById(teamId).select('name').lean(),
+      Event.findById(eventId).select('title').lean(),
+    ]);
+    if (team?.name && eventDoc?.title) {
+      await notifyGameNotesPublished({
+        teamId,
+        eventId: note.eventId,
+        authorUserId: String(userId),
+        authorName: req.user?.name ?? 'A coach',
+        teamName: team.name,
+        eventTitle: eventDoc.title,
+      });
+    }
+  } catch (err) {
+    logger.error('Failed to send game notes published notifications', err);
   }
 
   res.status(httpStatus.OK).json({
@@ -94,9 +115,26 @@ export const upsertPlayerNote = asyncWrapper(async (req: RequestWithContext, res
       playerId: note.playerId
     });
   } catch (err) {
-    // Do not fail the request if chat notification fails
-    // eslint-disable-next-line no-console
-    console.error('Failed to post system message for player game notes published:', err);
+    logger.error('Failed to post system message for player game notes published', err);
+  }
+
+  try {
+    const [team, eventDoc] = await Promise.all([
+      Team.findById(teamId).select('name').lean(),
+      Event.findById(eventId).select('title').lean(),
+    ]);
+    if (team?.name && eventDoc?.title) {
+      await notifyGameNotesPublished({
+        teamId,
+        eventId: note.eventId,
+        authorUserId: String(userId),
+        authorName: req.user?.name ?? 'A coach',
+        teamName: team.name,
+        eventTitle: eventDoc.title,
+      });
+    }
+  } catch (err) {
+    logger.error('Failed to send game notes published notifications', err);
   }
 
   res.status(httpStatus.OK).json({

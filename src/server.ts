@@ -6,6 +6,7 @@ import errorHandler from '@core/utils/errorHandler';
 import { db, connectionType } from '@config/db';
 import runAllSeeders from '@seeders/index';
 import { TeamChatGateway } from '@components/teamChat/v1/teamChat.gateway';
+import { startEventReminderScheduler } from './scheduler/eventReminder.scheduler';
 
 const { port } = config.app;
 
@@ -26,6 +27,9 @@ db.once('open', async () => {
   } catch (error) {
     logger.error('Failed to run seeders:', error);
   }
+
+  // Start event reminder cron job
+  startEventReminderScheduler();
 });
 
 export const server = http.createServer(app);

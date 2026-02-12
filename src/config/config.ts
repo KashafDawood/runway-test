@@ -35,6 +35,14 @@ const envsSchema = Joi.object()
     // Auth Service Configuration (for future migration)
     USE_EXTERNAL_AUTH: Joi.string().valid('true', 'false').default('false'),
     AUTH_SERVICE_URL: Joi.string().default('http://localhost:8000'),
+    // Firebase Cloud Messaging (optional – app runs without push if not set)
+    FIREBASE_PROJECT_ID: Joi.string().optional(),
+    FIREBASE_CLIENT_EMAIL: Joi.string().email().optional(),
+    FIREBASE_PRIVATE_KEY: Joi.string().optional(),
+    FIREBASE_SERVICE_ACCOUNT_PATH: Joi.string().optional(),
+    // Event reminder job (optional)
+    EVENT_REMINDER_MINUTES_BEFORE: Joi.number().optional().default(60),
+    EVENT_REMINDER_CRON: Joi.string().optional().default('*/15 * * * *'),
   })
   .unknown(true);
 
@@ -78,5 +86,15 @@ export default {
   auth: {
     useExternalService: envVars.USE_EXTERNAL_AUTH === 'true',
     externalServiceUrl: envVars.AUTH_SERVICE_URL,
+  },
+  firebase: {
+    projectId: envVars.FIREBASE_PROJECT_ID,
+    clientEmail: envVars.FIREBASE_CLIENT_EMAIL,
+    privateKey: envVars.FIREBASE_PRIVATE_KEY,
+    serviceAccountPath: envVars.FIREBASE_SERVICE_ACCOUNT_PATH,
+  },
+  eventReminder: {
+    minutesBefore: envVars.EVENT_REMINDER_MINUTES_BEFORE,
+    cronSchedule: envVars.EVENT_REMINDER_CRON,
   },
 };

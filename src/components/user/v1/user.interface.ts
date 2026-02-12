@@ -14,7 +14,10 @@ export interface IUser extends Document {
   
   // For external auth service migration
   authServiceId?: string;
-  
+
+  // Notification preferences (Phase 1: global on/off)
+  notificationsEnabled?: boolean;
+
   created_at: Date;
   updated_at: Date;
 }

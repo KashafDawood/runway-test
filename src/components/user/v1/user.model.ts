@@ -49,6 +49,10 @@ const userSchema = new Schema<IUser>(
       default: null,
       index: true,
     },
+    notificationsEnabled: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: {

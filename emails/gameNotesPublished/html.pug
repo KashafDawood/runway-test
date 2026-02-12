@@ -1,0 +1,17 @@
+extends ../baseEmail
+
+block content
+  p Hi there,
+
+  p #{authorName} has published game notes for <strong>#{teamName}</strong>:
+
+  p
+    strong #{eventTitle}
+
+  if notesUrl
+    .button-container
+      a(href=notesUrl class="button") View Notes
+    p.small Or copy and paste this link into your browser:
+    p.small #{notesUrl}
+
+  p.small You received this because you are a member of this team on Runway.

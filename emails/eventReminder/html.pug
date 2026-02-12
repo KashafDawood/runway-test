@@ -1,0 +1,19 @@
+extends ../baseEmail
+
+block content
+  p Hi there,
+
+  p This is a reminder for an upcoming event in <strong>#{teamName}</strong>:
+
+  p
+    strong #{eventTitle}
+    br
+    | #{eventStart}
+
+  if eventUrl
+    .button-container
+      a(href=eventUrl class="button") View Event
+    p.small Or copy and paste this link into your browser:
+    p.small #{eventUrl}
+
+  p.small You received this because you are a member of this team on Runway.

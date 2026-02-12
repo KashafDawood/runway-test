@@ -8,6 +8,9 @@ import * as attendanceService from './attendance.service';
 import { postSystemMessage } from '@components/teamChat/v1/systemMessage.service';
 import { SystemEventKind } from '@components/teamChat/v1/teamChat.interface';
 import { EventType } from './event.interface';
+import { Team } from '@components/team/v1/team.model';
+import { notifyEventCreated } from '@components/notification/v1/notificationDelivery.service';
+import logger from '@core/utils/logger';
 import { permissionService } from '@shared/services/permission.service';
 import { Resource, Action } from '@shared/types/permission.types';
 import { RoleName } from '@components/role/v1/role.interface';
@@ -60,7 +63,23 @@ export const createEvent = asyncWrapper(async (req: RequestWithContext, res: Res
       title: event.title
     });
   } catch (err) {
-    console.error('Failed to post system message for event created:', err);
+    logger.error('Failed to post system message for event created', err);
+  }
+
+  try {
+    const team = await Team.findById(teamId).select('name').lean();
+    if (team?.name) {
+      await notifyEventCreated({
+        teamId,
+        eventId: event.id,
+        title: event.title,
+        eventStart: new Date(event.start),
+        teamName: team.name,
+        excludeUserId: String(userId),
+      });
+    }
+  } catch (err) {
+    logger.error('Failed to send event created notifications', err);
   }
 
   res.status(httpStatus.CREATED).json({

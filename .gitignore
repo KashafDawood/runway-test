@@ -45,3 +45,5 @@ dist/
 # Generated source-code #
 src/**/*.js.map
 coverage/
+
+firebase-service-account.json
