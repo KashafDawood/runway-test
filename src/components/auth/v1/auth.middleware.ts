@@ -1,5 +1,6 @@
 import { Response, NextFunction } from "express";
 import httpStatus from "http-status";
+import mongoose from "mongoose";
 import asyncWrapper from "@core/utils/asyncWrapper";
 import AppError from "@core/utils/appError";
 import { verifyAccessToken } from "@shared/services/jwt";
@@ -8,6 +9,15 @@ import { UserRole } from "@components/userRole/v1/userRole.model";
 import { RoleName } from "@components/role/v1/role.interface";
 import { UserRoleStatus } from "@components/userRole/v1/userRole.interface";
 import { RequestWithContext } from "types/request";
+
+const PERMISSION_DENIED_MESSAGE =
+  "You do not have permission to access this resource.";
+
+function teamIdForQuery(teamId: string): string | mongoose.Types.ObjectId {
+  return mongoose.Types.ObjectId.isValid(teamId)
+    ? new mongoose.Types.ObjectId(teamId)
+    : teamId;
+}
 
 export const verifyToken = asyncWrapper(
   async (req: RequestWithContext, res: Response, next: NextFunction) => {
@@ -187,14 +197,33 @@ export const requireTeamRole = (...allowedRoles: RoleName[]) => {
         );
       }
 
-      // Get user's role in this team
+      const teamIdFilter = teamIdForQuery(req.teamId);
+
+      // Get user's active role in this team
       const userRole = await UserRole.findOne({
         userId: req.user._id,
-        teamId: req.teamId,
+        teamId: teamIdFilter,
         status: UserRoleStatus.ACTIVE,
       });
 
       if (!userRole) {
+        // Distinguish true non-members from pending/removed/other membership rows
+        const anyMembership = await UserRole.findOne({
+          userId: req.user._id,
+          teamId: teamIdFilter,
+        });
+
+        if (anyMembership?.status === UserRoleStatus.REMOVED) {
+          throw new AppError(
+            httpStatus.FORBIDDEN,
+            "You are not a member of this team",
+          );
+        }
+
+        if (anyMembership) {
+          throw new AppError(httpStatus.FORBIDDEN, PERMISSION_DENIED_MESSAGE);
+        }
+
         throw new AppError(
           httpStatus.FORBIDDEN,
           "You are not a member of this team",
@@ -202,10 +231,7 @@ export const requireTeamRole = (...allowedRoles: RoleName[]) => {
       }
 
       if (!allowedRoles.includes(userRole.roleName)) {
-        throw new AppError(
-          httpStatus.FORBIDDEN,
-          `Access denied. Required role: ${allowedRoles.join(" or ")}`,
-        );
+        throw new AppError(httpStatus.FORBIDDEN, PERMISSION_DENIED_MESSAGE);
       }
 
       // Attach user's role in team to request
@@ -240,10 +266,12 @@ export const requireTeamMember = asyncWrapper(
         );
       }
 
+      const teamIdFilter = teamIdForQuery(req.teamId);
+
       // Check if user has any active role in team
       const userRole = await UserRole.findOne({
         userId: req.user._id,
-        teamId: req.teamId,
+        teamId: teamIdFilter,
         status: UserRoleStatus.ACTIVE,
       });
 

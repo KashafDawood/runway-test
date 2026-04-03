@@ -104,10 +104,29 @@ export const cancelInviteSchema: ValidationSchema = {
 export const getUserInvitesSchema: ValidationSchema = {
   query: Joi.object({
     status: Joi.string()
-      .valid('pending', 'accepted', 'declined', 'expired', 'cancelled')
+      .valid('pending', 'pending_approval', 'accepted', 'declined', 'expired', 'cancelled')
       .optional()
       .messages({
-        'any.only': 'Status must be one of: pending, accepted, declined, expired, cancelled'
+        'any.only': 'Status must be one of: pending, pending_approval, accepted, declined, expired, cancelled'
+      })
+  })
+};
+
+export const approvePendingInviteSchema: ValidationSchema = {
+  params: Joi.object({
+    inviteId: Joi.string()
+      .required()
+      .messages({
+        'string.empty': 'Invite ID is required'
+      })
+  }),
+  body: Joi.object({
+    role: Joi.string()
+      .valid(...Object.values(RoleName))
+      .required()
+      .messages({
+        'any.only': `Role must be one of: ${Object.values(RoleName).join(', ')}`,
+        'any.required': 'Role is required'
       })
   })
 };

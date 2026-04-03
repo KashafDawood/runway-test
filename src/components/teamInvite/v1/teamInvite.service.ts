@@ -9,6 +9,7 @@ import UserModel from '@components/user/v1/user.model';
 import { RoleName } from '@components/role/v1/role.interface';
 import { UserRoleStatus } from '@components/userRole/v1/userRole.interface';
 import { Player } from '@components/player/v1/player.model';
+import { splitDisplayNameForPlayer } from '@components/player/v1/playerName.util';
 import { sendEmail } from '@shared/services/mail';
 import AppError from '@core/utils/appError';
 import httpStatus from 'http-status';
@@ -30,6 +31,12 @@ interface IAcceptInviteInput {
   token: string;
   role: RoleName; // User chooses role
   userId: string; // Required - user must exist and be authenticated
+}
+
+interface IApprovePendingInviteInput {
+  inviteId: string;
+  approvedBy: string;
+  role: RoleName;
 }
 
 interface IBatchInviteResult {
@@ -318,8 +325,11 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     throw new AppError(httpStatus.NOT_FOUND, INVITE_ERRORS.NOT_FOUND);
   }
 
-  // Check if invite is pending
+  // Check if invite is pending (before user acceptance)
   if (invite.status !== InviteStatus.PENDING) {
+    if (invite.status === InviteStatus.PENDING_APPROVAL) {
+      throw new AppError(httpStatus.CONFLICT, 'Invite already accepted by user and waiting for coach approval');
+    }
     if (invite.status === InviteStatus.ACCEPTED) {
       throw new AppError(httpStatus.CONFLICT, INVITE_ERRORS.ALREADY_ACCEPTED);
     }
@@ -382,13 +392,103 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     throw new AppError(httpStatus.CONFLICT, INVITE_ERRORS.ALREADY_MEMBER);
   }
 
-  // SECURITY: Prevent adding multiple coaches to a team
-  // Each team can only have ONE coach
+  // Store pending membership request. User is not active in team yet.
+  await UserRole.findOneAndUpdate(
+    {
+      userId: user._id,
+      teamId: invite.teamId,
+      status: UserRoleStatus.INVITED,
+    },
+    {
+      roleId: roleDoc._id,
+      roleName: role,
+      status: UserRoleStatus.INVITED,
+      invitedBy: invite.invitedBy,
+      invitedAt: invite.createdAt,
+      joinedAt: undefined,
+      removedAt: undefined,
+    },
+    {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+    }
+  );
+
+  // Mark invite as awaiting coach approval
+  invite.status = InviteStatus.PENDING_APPROVAL;
+  invite.acceptedBy = new Types.ObjectId(user._id);
+  invite.acceptedRole = role;
+  invite.acceptedAt = new Date();
+  await invite.save();
+
+  logger.info(
+    `Invite accepted by user and pending approval: ${invite._id} by user ${user._id} with role ${role}`
+  );
+
+  // Remove password from response
+  const userObj = user.toObject();
+  delete userObj.password;
+
+  return {
+    invite,
+    user: userObj
+  };
+};
+
+/**
+ * Coach approves an invite already accepted by user (pending approval).
+ * Coach can override role in this API call.
+ */
+export const approvePendingInvite = async (data: IApprovePendingInviteInput): Promise<{
+  invite: ITeamInvite;
+  userRole: {
+    userId: string;
+    teamId: string;
+    role: RoleName;
+    status: UserRoleStatus;
+  };
+}> => {
+  const { inviteId, approvedBy, role } = data;
+
+  const invite = await TeamInvite.findById(inviteId)
+    .populate('teamId', 'name')
+    .populate('invitedBy', 'name');
+
+  if (!invite) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Invite not found');
+  }
+
+  if (invite.status !== InviteStatus.PENDING_APPROVAL) {
+    throw new AppError(httpStatus.BAD_REQUEST, INVITE_ERRORS.NOT_AWAITING_APPROVAL);
+  }
+
+  if (!invite.acceptedBy) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invite has no accepted user');
+  }
+
+  const coachRole = await UserRole.findOne({
+    userId: approvedBy,
+    teamId: invite.teamId,
+    status: UserRoleStatus.ACTIVE
+  });
+
+  if (!coachRole || coachRole.roleName !== RoleName.COACH) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Only coaches can approve pending invites');
+  }
+
+  const roleDoc = await Role.findOne({ name: role });
+  if (!roleDoc) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid role selected');
+  }
+
+  // Enforce one active coach per team.
   if (role === RoleName.COACH) {
     const existingCoach = await UserRole.findOne({
       teamId: invite.teamId,
       roleName: RoleName.COACH,
-      status: UserRoleStatus.ACTIVE
+      status: UserRoleStatus.ACTIVE,
+      userId: { $ne: invite.acceptedBy }
     });
 
     if (existingCoach) {
@@ -399,53 +499,91 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     }
   }
 
-  // Create UserRole (add user to team with chosen role)
-  await UserRole.create({
-    userId: user._id,
+  const existingActiveMembership = await UserRole.findOne({
+    userId: invite.acceptedBy,
     teamId: invite.teamId,
-    roleId: roleDoc._id,
-    roleName: role,
-    status: UserRoleStatus.ACTIVE,
-    invitedBy: invite.invitedBy,
-    invitedAt: invite.createdAt,
-    joinedAt: new Date()
+    status: UserRoleStatus.ACTIVE
   });
 
-  // When user accepts as PLAYER, create a roster (Player) record linked to their account
-  // so RSVP and other per-player features work
-  if (role === RoleName.PLAYER) {
-    const nameParts = (user.name || user.email?.split('@')[0] || 'Player').trim().split(/\s+/);
-    const firstName = nameParts[0] || 'Player';
-    const lastName = nameParts.slice(1).join(' ') || ' ';
-    await Player.create({
-      userId: user._id,
-      teamId: invite.teamId,
-      firstName,
-      lastName,
-      hasEmail: true,
-      createdBy: invite.invitedBy
-    });
-    logger.info(`Created roster (Player) record for user ${user._id} on team ${invite.teamId}`);
+  if (existingActiveMembership) {
+    throw new AppError(httpStatus.CONFLICT, INVITE_ERRORS.ALREADY_MEMBER);
   }
 
-  // Mark invite as accepted
+  const pendingMembership = await UserRole.findOne({
+    userId: invite.acceptedBy,
+    teamId: invite.teamId,
+    status: UserRoleStatus.INVITED,
+  });
+
+  if (!pendingMembership) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Pending membership not found for this invite');
+  }
+
+  // Create roster before activating membership so we never leave the user active without a valid Player row.
+  if (role === RoleName.PLAYER) {
+    const acceptedUser = await UserModel.findById(invite.acceptedBy);
+    if (!acceptedUser) {
+      throw new AppError(httpStatus.NOT_FOUND, 'User not found');
+    }
+    const existingPlayer = await Player.findOne({
+      userId: invite.acceptedBy,
+      teamId: invite.teamId,
+    });
+
+    if (!existingPlayer) {
+      const { firstName, lastName } = splitDisplayNameForPlayer(
+        acceptedUser.name,
+        acceptedUser.email?.split('@')[0]
+      );
+      await Player.create({
+        userId: invite.acceptedBy,
+        teamId: invite.teamId,
+        firstName,
+        lastName,
+        hasEmail: true,
+        createdBy: invite.invitedBy
+      });
+    }
+  }
+
+  const roleUnchanged = pendingMembership.roleName === role;
+  const updatedUserRole = await UserRole.findOneAndUpdate(
+    {
+      userId: invite.acceptedBy,
+      teamId: invite.teamId,
+      status: UserRoleStatus.INVITED,
+    },
+    {
+      ...(roleUnchanged
+        ? {}
+        : { roleId: roleDoc._id, roleName: role }),
+      status: UserRoleStatus.ACTIVE,
+      joinedAt: new Date(),
+      removedAt: undefined,
+    },
+    { new: true }
+  );
+
+  if (!updatedUserRole) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Pending membership not found for this invite');
+  }
+
   invite.status = InviteStatus.ACCEPTED;
-  invite.acceptedBy = new Types.ObjectId(user._id);
   invite.acceptedRole = role;
-  invite.acceptedAt = new Date();
   await invite.save();
 
   logger.info(
-    `Invite accepted: ${invite._id} by user ${user._id} with role ${role}`
+    `Pending invite approved: ${invite._id} by coach ${approvedBy} with role ${role}`
   );
-
-  // Remove password from response
-  const userObj = user.toObject();
-  delete userObj.password;
 
   return {
     invite,
-    user: userObj
+    userRole: {
+      userId: updatedUserRole.userId.toString(),
+      teamId: updatedUserRole.teamId.toString(),
+      role: updatedUserRole.roleName,
+      status: updatedUserRole.status,
+    }
   };
 };
 
@@ -464,7 +602,10 @@ export const getTeamInvites = async (
   });
 
   if (!userRole || userRole.roleName !== RoleName.COACH) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Only coaches can view invites');
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      'You do not have permission to access this resource.',
+    );
   }
 
   const invites = await TeamInvite.find({ teamId })

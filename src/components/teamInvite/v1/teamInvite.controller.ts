@@ -71,7 +71,7 @@ export const acceptInvite = asyncWrapper(async (req: Request, res: Response) => 
 
   res.status(httpStatus.OK).json({
     success: true,
-    message: 'Invite accepted successfully',
+    message: 'Invite accepted and pending coach approval',
     data: result
   });
 });
@@ -157,5 +157,32 @@ export const resendInvite = asyncWrapper(async (req: Request, res: Response) => 
   res.status(httpStatus.OK).json({
     success: true,
     message: 'Invite resent successfully'
+  });
+});
+
+/**
+ * POST /api/v1/team-invites/:inviteId/approve
+ * Coach approves accepted invite that is pending approval.
+ * Coach can set/change final role in the same API call.
+ */
+export const approvePendingInvite = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  const { inviteId } = req.params;
+  const { role } = req.body;
+
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
+
+  const result = await teamInviteService.approvePendingInvite({
+    inviteId,
+    approvedBy: userId,
+    role,
+  });
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    message: 'Pending invite approved successfully',
+    data: result
   });
 });

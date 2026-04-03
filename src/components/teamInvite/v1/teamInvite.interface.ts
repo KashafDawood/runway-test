@@ -3,6 +3,7 @@ import { RoleName } from '@components/role/v1/role.interface';
 
 export enum InviteStatus {
   PENDING = 'pending',
+  PENDING_APPROVAL = 'pending_approval',
   ACCEPTED = 'accepted',
   DECLINED = 'declined',
   EXPIRED = 'expired',

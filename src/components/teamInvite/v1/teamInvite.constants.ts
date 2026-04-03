@@ -4,6 +4,7 @@ export const INVITE_EXPIRY_MS = INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
 export const INVITE_ERRORS = {
   NOT_FOUND: 'Invite not found or has expired',
   ALREADY_ACCEPTED: 'This invite has already been accepted',
+  NOT_AWAITING_APPROVAL: 'Invite is not awaiting coach approval',
   EXPIRED: 'This invite has expired',
   INVALID_TOKEN: 'Invalid invite token',
   ALREADY_MEMBER: 'You are already a member of this team',

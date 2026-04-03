@@ -106,4 +106,18 @@ router.post(
   validate(teamInviteValidation.cancelInviteSchema),
   teamInviteController.resendInvite
 );
+
+/**
+ * POST /api/v1/team-invites/:inviteId/approve
+ *
+ * Coach approves pending member request from accepted invite.
+ * Coach can set/change final role in same request.
+ */
+router.post(
+  '/:inviteId/approve',
+  verifyToken,
+  requireEmailVerified,
+  validate(teamInviteValidation.approvePendingInviteSchema),
+  teamInviteController.approvePendingInvite
+);
 export default router;

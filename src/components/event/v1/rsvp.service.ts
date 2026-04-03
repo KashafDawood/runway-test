@@ -4,6 +4,7 @@ import AppError from '@core/utils/appError';
 import { Rsvp } from './rsvp.model';
 import { IRsvp, RsvpStatus } from './rsvp.interface';
 import { Player } from '@components/player/v1/player.model';
+import { splitDisplayNameForPlayer } from '@components/player/v1/playerName.util';
 
 const toObjectId = (id: string) => new mongoose.Types.ObjectId(id);
 
@@ -44,9 +45,10 @@ export async function ensurePlayerForUser(
   const existing = await getPlayerIdForUser(teamId, userId);
   if (existing) return existing;
 
-  const nameParts = (userInfo.name || userInfo.email?.split('@')[0] || 'Player').trim().split(/\s+/);
-  const firstName = nameParts[0] || 'Player';
-  const lastName = nameParts.slice(1).join(' ') || ' ';
+  const { firstName, lastName } = splitDisplayNameForPlayer(
+    userInfo.name,
+    userInfo.email?.split('@')[0]
+  );
 
   const player = await Player.create({
     userId: toObjectId(userId),
