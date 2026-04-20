@@ -5,6 +5,8 @@ import AppError from '@core/utils/appError';
 import * as teamChatService from './teamChat.service';
 import { postSystemMessage as postSystemMessageService } from './systemMessage.service';
 import { SystemEventKind } from './teamChat.interface';
+import { permissionService } from '@shared/services/permission.service';
+import { Action, Resource } from '@shared/types/permission.types';
 
 /**
  * When adding PATCH or DELETE message endpoints: load the message and reject with
@@ -25,6 +27,19 @@ export const postMessage = asyncWrapper(async (req: Request, res: Response) => {
 
   if (!teamId) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Team ID is required');
+  }
+
+  const perm = await permissionService.checkPermission({
+    userId: String(userId),
+    teamId,
+    resource: Resource.CHAT,
+    action: Action.CREATE
+  });
+  if (!perm.allowed) {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      perm.reason ?? 'Not allowed to send chat messages'
+    );
   }
 
   const message = await teamChatService.createUserMessage({

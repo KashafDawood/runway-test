@@ -51,6 +51,12 @@ const teamInviteSchema = new Schema<ITeamInvite>(
     },
     acceptedAt: {
       type: Date
+    },
+    minorPlayerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Player',
+      default: undefined,
+      index: true
     }
   },
   {

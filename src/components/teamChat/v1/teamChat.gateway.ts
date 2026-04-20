@@ -7,6 +7,8 @@ import { UserRole } from '@components/userRole/v1/userRole.model';
 import { UserRoleStatus } from '@components/userRole/v1/userRole.interface';
 import { createUserMessage, createSystemMessage } from './teamChat.service';
 import { IUser } from '@components/user/v1/user.interface';
+import { permissionService } from '@shared/services/permission.service';
+import { Action, Resource } from '@shared/types/permission.types';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -125,6 +127,19 @@ export class TeamChatGateway {
         try {
           if (!data.text || !data.text.trim()) {
             socket.emit('error', { message: 'Message text is required' });
+            return;
+          }
+
+          const perm = await permissionService.checkPermission({
+            userId,
+            teamId,
+            resource: Resource.CHAT,
+            action: Action.CREATE
+          });
+          if (!perm.allowed) {
+            socket.emit('error', {
+              message: perm.reason ?? 'Not allowed to send chat messages'
+            });
             return;
           }
 

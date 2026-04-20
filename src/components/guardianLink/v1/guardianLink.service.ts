@@ -38,94 +38,53 @@ const normalizeGuardianLink = (link: IGuardianLink): GuardianLinkDto => ({
   updatedAt: link.updatedAt
 });
 
-const ensurePlayerBelongsToTeam = async (playerId: string, teamId: string) => {
-  const player = await Player.findOne({
-    _id: new Types.ObjectId(playerId),
-    teamId: new Types.ObjectId(teamId)
+const ensurePlayerBelongsToTeam = async (
+  playerIdOrUserId: string,
+  teamId: string
+): Promise<string> => {
+  const teamObjId = new Types.ObjectId(teamId);
+
+  // Primary path: payload is actual Player._id
+  let player = await Player.findOne({
+    _id: playerIdOrUserId,
+    teamId: teamObjId
   }).select('_id');
 
+  // Fallback: payload is User._id of a player member
   if (!player) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Player not found for this team');
+    player = await Player.findOne({
+      userId: playerIdOrUserId,
+      teamId: teamObjId
+    }).select('_id');
   }
+
+  if (!player) {
+    throw new AppError(
+      httpStatus.NOT_FOUND,
+      'Player not found for this team. Use Player._id or player userId for this team.'
+    );
+  }
+
+  return player._id.toString();
 };
 
-export interface RequestGuardianLinkInput {
+export interface AttachGuardianLinkAsCoachInput {
   teamId: string;
-  requesterUserId: string;
-  /**
-   * Optional explicit guardianId and playerId.
-   * Service will resolve any missing side based on requester role.
-   */
-  guardianId?: string;
-  playerId?: string;
+  coachUserId: string;
+  guardianUserId: string;
+  playerId: string;
 }
 
-export const requestGuardianLink = async (
-  input: RequestGuardianLinkInput
+/**
+ * Coach / assistant coach attaches an approved guardian–player link (immediate activation).
+ */
+export const attachGuardianLinkAsCoach = async (
+  input: AttachGuardianLinkAsCoachInput
 ): Promise<GuardianLinkDto> => {
-  const { teamId, requesterUserId } = input;
-  let { guardianId, playerId } = input;
-
-  // Determine requester's role in the team
-  const membership = await UserRole.findOne({
-    userId: requesterUserId,
-    teamId,
-    status: UserRoleStatus.ACTIVE
-  }).select('roleName');
-
-  if (!membership) {
-    throw new AppError(httpStatus.FORBIDDEN, 'User is not a member of this team');
-  }
-
-  const roleName = membership.roleName as RoleName;
-
-  // Resolve guardian/player sides based on who is requesting
-  if (roleName === RoleName.GUARDIAN) {
-    // Guardian is always the authenticated user
-    guardianId = requesterUserId;
-    if (!playerId) {
-      throw new AppError(httpStatus.BAD_REQUEST, 'playerId is required for guardian requests');
-    }
-  } else if (roleName === RoleName.PLAYER) {
-    // Player side is derived from authenticated user + team if not provided
-    if (!playerId) {
-      const player = await Player.findOne({
-        userId: requesterUserId,
-        teamId
-      }).select('_id');
-
-      if (!player) {
-        throw new AppError(
-          httpStatus.BAD_REQUEST,
-          'Player record not found for this user in the team'
-        );
-      }
-
-      playerId = player._id.toString();
-    }
-
-    if (!guardianId) {
-      throw new AppError(httpStatus.BAD_REQUEST, 'guardianId is required for player requests');
-    }
-  } else {
-    throw new AppError(
-      httpStatus.FORBIDDEN,
-      'Only players or guardians can request guardian links'
-    );
-  }
-
-  // At this point both sides must be present
-  if (!guardianId || !playerId) {
-    throw new AppError(
-      httpStatus.INTERNAL_SERVER_ERROR,
-      'guardianId and playerId must be resolved before creating guardian link'
-    );
-  }
-
-  await ensurePlayerBelongsToTeam(playerId, teamId);
+  const { teamId, coachUserId, guardianUserId, playerId } = input;
 
   const perm = await permissionService.checkPermission({
-    userId: requesterUserId,
+    userId: coachUserId,
     teamId,
     resource: Resource.GUARDIAN_LINK,
     action: Action.CREATE
@@ -134,44 +93,83 @@ export const requestGuardianLink = async (
   if (!perm.allowed) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      perm.reason ?? 'Only players or guardians can request guardian links'
+      perm.reason ?? 'Only coaches can attach guardian links'
     );
   }
 
+  const guardianMembership = await UserRole.findOne({
+    userId: guardianUserId,
+    teamId,
+    status: UserRoleStatus.ACTIVE,
+    roleName: RoleName.GUARDIAN
+  }).select('_id');
+
+  if (!guardianMembership) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'User must be an active guardian on this team'
+    );
+  }
+
+  const resolvedPlayerId = await ensurePlayerBelongsToTeam(playerId, teamId);
+
+  const now = new Date();
+  const coachOid = new Types.ObjectId(coachUserId);
+
   const existing = await GuardianLink.findOne({
-    guardianId: new Types.ObjectId(guardianId),
-    playerId: new Types.ObjectId(playerId),
+    guardianId: new Types.ObjectId(guardianUserId),
+    playerId: new Types.ObjectId(resolvedPlayerId),
     teamId: new Types.ObjectId(teamId)
   });
 
   if (existing) {
-    if (existing.status === GuardianLinkStatus.REMOVED) {
-      existing.status = GuardianLinkStatus.PENDING;
-      existing.requestedBy = new Types.ObjectId(requesterUserId);
-      existing.requestedAt = new Date();
-      existing.respondedBy = undefined;
-      existing.respondedAt = undefined;
-
-      await existing.save();
-      return normalizeGuardianLink(existing);
+    if (existing.status === GuardianLinkStatus.APPROVED) {
+      throw new AppError(
+        httpStatus.CONFLICT,
+        'Guardian link already exists for this player and team'
+      );
     }
 
-    throw new AppError(
-      httpStatus.CONFLICT,
-      'Guardian link already exists for this player and team'
-    );
+    existing.status = GuardianLinkStatus.APPROVED;
+    existing.requestedBy = coachOid;
+    existing.requestedAt = existing.requestedAt || now;
+    existing.respondedBy = coachOid;
+    existing.respondedAt = now;
+    await existing.save();
+    return normalizeGuardianLink(existing);
   }
 
   const link = await GuardianLink.create({
-    guardianId: new Types.ObjectId(guardianId),
-    playerId: new Types.ObjectId(playerId),
+    guardianId: new Types.ObjectId(guardianUserId),
+    playerId: new Types.ObjectId(resolvedPlayerId),
     teamId: new Types.ObjectId(teamId),
-    status: GuardianLinkStatus.PENDING,
-    requestedBy: new Types.ObjectId(requesterUserId),
-    requestedAt: new Date()
+    status: GuardianLinkStatus.APPROVED,
+    requestedBy: coachOid,
+    requestedAt: now,
+    respondedBy: coachOid,
+    respondedAt: now
   });
 
   return normalizeGuardianLink(link);
+};
+
+export interface RequestGuardianLinkInput {
+  teamId: string;
+  requesterUserId: string;
+  guardianId: string;
+  playerId: string;
+}
+
+/** @deprecated Use attachGuardianLinkAsCoach — kept as HTTP handler entry */
+export const requestGuardianLink = async (
+  input: RequestGuardianLinkInput
+): Promise<GuardianLinkDto> => {
+  return attachGuardianLinkAsCoach({
+    teamId: input.teamId,
+    coachUserId: input.requesterUserId,
+    guardianUserId: input.guardianId,
+    playerId: input.playerId
+  });
 };
 
 export interface ListGuardianLinksInput {
@@ -242,7 +240,7 @@ export interface UpdateGuardianLinkStatusInput {
 export const approveGuardianLink = async (
   input: UpdateGuardianLinkStatusInput
 ): Promise<GuardianLinkDto> => {
-  const { teamId, userId, linkId } = input;
+  const { teamId, linkId } = input;
 
   const link = await GuardianLink.findOne({
     _id: new Types.ObjectId(linkId),
@@ -253,64 +251,16 @@ export const approveGuardianLink = async (
     throw new AppError(httpStatus.NOT_FOUND, 'Guardian link not found');
   }
 
-  if (link.status !== GuardianLinkStatus.PENDING) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Only pending links can be approved');
-  }
-
-  // Figure out which side requested and which side must respond
-  const guardianId = link.guardianId.toString();
-  const player = await Player.findOne({
-    _id: link.playerId
-  }).select('userId');
-
-  const playerUserId = player?.userId ? player.userId.toString() : undefined;
-
-  let targetUserId: string | undefined;
-
-  // Case 1: guardian initiated the request → player must respond
-  if (link.requestedBy.toString() === guardianId) {
-    targetUserId = playerUserId;
-  }
-  // Case 2: player (user) initiated the request → guardian must respond
-  else if (playerUserId && link.requestedBy.toString() === playerUserId) {
-    targetUserId = guardianId;
-  }
-
-  if (!targetUserId) {
-    throw new AppError(
-      httpStatus.FORBIDDEN,
-      'Only the linked guardian or player can approve this request'
-    );
-  }
-
-  const perm = await permissionService.checkPermission({
-    userId,
-    teamId,
-    resource: Resource.GUARDIAN_LINK,
-    action: Action.APPROVE,
-    targetUserId
-  });
-
-  if (!perm.allowed) {
-    throw new AppError(
-      httpStatus.FORBIDDEN,
-      perm.reason ?? 'Not allowed to approve this guardian link'
-    );
-  }
-
-  link.status = GuardianLinkStatus.APPROVED;
-  link.respondedBy = new Types.ObjectId(userId);
-  link.respondedAt = new Date();
-
-  await link.save();
-
-  return normalizeGuardianLink(link);
+  throw new AppError(
+    httpStatus.GONE,
+    'Guardian link approval by players/guardians is no longer supported. Coaches attach links directly.'
+  );
 };
 
 export const rejectGuardianLink = async (
   input: UpdateGuardianLinkStatusInput
 ): Promise<GuardianLinkDto> => {
-  const { teamId, userId, linkId } = input;
+  const { teamId, linkId } = input;
 
   const link = await GuardianLink.findOne({
     _id: new Types.ObjectId(linkId),
@@ -321,58 +271,10 @@ export const rejectGuardianLink = async (
     throw new AppError(httpStatus.NOT_FOUND, 'Guardian link not found');
   }
 
-  if (link.status !== GuardianLinkStatus.PENDING) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Only pending links can be rejected');
-  }
-
-  // Determine who is allowed to reject: the non-requesting side
-  const guardianId = link.guardianId.toString();
-  const player = await Player.findOne({
-    _id: link.playerId
-  }).select('userId');
-
-  const playerUserId = player?.userId ? player.userId.toString() : undefined;
-
-  let targetUserId: string | undefined;
-
-  // Case 1: guardian initiated the request → player must respond
-  if (link.requestedBy.toString() === guardianId) {
-    targetUserId = playerUserId;
-  }
-  // Case 2: player (user) initiated the request → guardian must respond
-  else if (playerUserId && link.requestedBy.toString() === playerUserId) {
-    targetUserId = guardianId;
-  }
-
-  if (!targetUserId) {
-    throw new AppError(
-      httpStatus.FORBIDDEN,
-      'Only the linked guardian or player can reject this request'
-    );
-  }
-
-  const perm = await permissionService.checkPermission({
-    userId,
-    teamId,
-    resource: Resource.GUARDIAN_LINK,
-    action: Action.APPROVE,
-    targetUserId
-  });
-
-  if (!perm.allowed) {
-    throw new AppError(
-      httpStatus.FORBIDDEN,
-      perm.reason ?? 'Not allowed to reject this guardian link'
-    );
-  }
-
-  link.status = GuardianLinkStatus.REJECTED;
-  link.respondedBy = new Types.ObjectId(userId);
-  link.respondedAt = new Date();
-
-  await link.save();
-
-  return normalizeGuardianLink(link);
+  throw new AppError(
+    httpStatus.GONE,
+    'Guardian link rejection by players/guardians is no longer supported. Coaches attach links directly.'
+  );
 };
 
 export const removeGuardianLink = async (

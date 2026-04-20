@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import { IPlayer } from './player.interface';
+import { isMinorFromDateOfBirth } from '@shared/utils/age.util';
 
 const playerSchema = new Schema<IPlayer>(
   {
@@ -66,16 +67,7 @@ playerSchema.index({ teamId: 1, lastName: 1, firstName: 1 });
 // Pre-save hook to compute isMinor
 playerSchema.pre<IPlayer>('save', function (next) {
   if (this.dateOfBirth) {
-    const today = new Date();
-    const birthDate = new Date(this.dateOfBirth);
-    const age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      this.isMinor = age - 1 < 18;
-    } else {
-      this.isMinor = age < 18;
-    }
+    this.isMinor = isMinorFromDateOfBirth(new Date(this.dateOfBirth));
   }
   next();
 });

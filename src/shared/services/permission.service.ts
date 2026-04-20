@@ -99,6 +99,21 @@ export class PermissionService {
     return !!link;
   }
 
+  /**
+   * Strict minor gate:
+   * minor players are guardian-managed and cannot perform player actions directly.
+   */
+  private async isMinorPlayerUser(
+    userId: string,
+    teamId: string,
+  ): Promise<boolean> {
+    const player = await Player.findOne({
+      userId,
+      teamId,
+    }).select("_id isMinor");
+    return !!player?.isMinor;
+  }
+
   // Permission checks for each resource type
 
   private checkTeamPermission(
@@ -138,17 +153,29 @@ export class PermissionService {
     }
   }
 
-  private checkChatPermission(
+  private async checkChatPermission(
     context: PermissionContext,
     userRole: RoleName,
     isAdmin: boolean,
-  ): PermissionResult {
-    const { action, resourceOwnerId, userId } = context;
+  ): Promise<PermissionResult> {
+    const { action, resourceOwnerId, userId, teamId } = context;
 
     switch (action) {
       case Action.VIEW:
+        return { allowed: true }; // All members can view messages
+
       case Action.CREATE:
-        return { allowed: true }; // All members can view and send messages
+        if (userRole === RoleName.PLAYER) {
+          const isMinor = await this.isMinorPlayerUser(userId, teamId);
+          if (isMinor) {
+            return {
+              allowed: false,
+              reason:
+                "Minor player cannot send chat messages directly. Guardian must act on behalf of player.",
+            };
+          }
+        }
+        return { allowed: true };
 
       case Action.PIN:
         return { allowed: isAdmin }; // Only admins can pin
@@ -210,7 +237,19 @@ export class PermissionService {
       case Action.CREATE:
       case Action.UPDATE:
         // Users can update own RSVP
-        if (targetUserId === userId) return { allowed: true };
+        if (targetUserId === userId) {
+          if (userRole === RoleName.PLAYER) {
+            const isMinor = await this.isMinorPlayerUser(userId, teamId);
+            if (isMinor) {
+              return {
+                allowed: false,
+                reason:
+                  "Minor player cannot submit RSVP directly. Guardian must act on behalf of player.",
+              };
+            }
+          }
+          return { allowed: true };
+        }
         // Guardians can update linked player's RSVP
         if (playerId && userRole === RoleName.GUARDIAN) {
           const isGuardian = await this.isGuardianOfPlayer(
@@ -239,7 +278,19 @@ export class PermissionService {
         // Admins see all
         if (isAdmin) return { allowed: true };
         // Players see own
-        if (targetUserId === userId) return { allowed: true };
+        if (targetUserId === userId) {
+          if (userRole === RoleName.PLAYER) {
+            const isMinor = await this.isMinorPlayerUser(userId, teamId);
+            if (isMinor) {
+              return {
+                allowed: false,
+                reason:
+                  "Minor player attendance is guardian-managed. Guardian must access on behalf of player.",
+              };
+            }
+          }
+          return { allowed: true };
+        }
         // Guardians see linked players
         if (playerId && userRole === RoleName.GUARDIAN) {
           const isGuardian = await this.isGuardianOfPlayer(
@@ -278,7 +329,15 @@ export class PermissionService {
             _id: playerId,
             teamId,
             userId,
-          }).select("_id");
+          }).select("_id isMinor");
+
+          if (player?.isMinor) {
+            return {
+              allowed: false,
+              reason:
+                "Minor player game notes are guardian-managed. Guardian must access on behalf of player.",
+            };
+          }
 
           return {
             allowed: !!player,
@@ -319,7 +378,17 @@ export class PermissionService {
         // Admins see all
         if (isAdmin) return { allowed: true };
         // Players see own payments
-        if (userRole === RoleName.PLAYER) return { allowed: true };
+        if (userRole === RoleName.PLAYER) {
+          const isMinor = await this.isMinorPlayerUser(userId, teamId);
+          if (isMinor) {
+            return {
+              allowed: false,
+              reason:
+                "Minor player payments are guardian-managed. Guardian must access on behalf of player.",
+            };
+          }
+          return { allowed: true };
+        }
         // Guardians see linked player payments
         if (playerId && userRole === RoleName.GUARDIAN) {
           const isGuardian = await this.isGuardianOfPlayer(
@@ -337,7 +406,17 @@ export class PermissionService {
 
       case Action.PAY:
         // Players can pay own, guardians can pay for linked players
-        if (userRole === RoleName.PLAYER) return { allowed: true };
+        if (userRole === RoleName.PLAYER) {
+          const isMinor = await this.isMinorPlayerUser(userId, teamId);
+          if (isMinor) {
+            return {
+              allowed: false,
+              reason:
+                "Minor player cannot make payments directly. Guardian must pay on behalf of player.",
+            };
+          }
+          return { allowed: true };
+        }
         if (playerId && userRole === RoleName.GUARDIAN) {
           const isGuardian = await this.isGuardianOfPlayer(
             userId,
@@ -372,8 +451,8 @@ export class PermissionService {
         return { allowed: false };
 
       case Action.CREATE:
-        // Guardians and players can request links
-        if (userRole === RoleName.GUARDIAN || userRole === RoleName.PLAYER) {
+        // Only coaches / assistant coaches attach guardian links
+        if (isAdmin) {
           return { allowed: true };
         }
         return { allowed: false };
@@ -387,8 +466,10 @@ export class PermissionService {
         return { allowed: false };
 
       case Action.DELETE:
-        // Only the directly involved user can remove their own link
-        // (e.g. guardian removing their link)
+        // Coaches can remove any link in the team; guardians can remove their own
+        if (isAdmin) {
+          return { allowed: true };
+        }
         if (targetUserId === userId) {
           return { allowed: true };
         }

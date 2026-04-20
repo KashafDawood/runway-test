@@ -11,7 +11,7 @@ import * as teamInviteService from './teamInvite.service';
 export const createBatchInvites = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
   const { teamId } = req.params;
-  const { emails } = req.body;
+  const { emails, inviteEntries } = req.body;
 
   if (!userId) {
     throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
@@ -20,7 +20,8 @@ export const createBatchInvites = asyncWrapper(async (req: Request, res: Respons
   const results = await teamInviteService.createBatchInvites({
     teamId,
     invitedBy: userId,
-    emails
+    emails,
+    inviteEntries
   });
 
   res.status(httpStatus.CREATED).json({
@@ -57,7 +58,7 @@ export const checkInvite = asyncWrapper(async (req: Request, res: Response) => {
  */
 export const acceptInvite = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
-  const { token, role } = req.body;
+  const { token, role, dateOfBirth } = req.body;
 
   if (!userId) {
     throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
@@ -67,6 +68,7 @@ export const acceptInvite = asyncWrapper(async (req: Request, res: Response) => 
     token,
     role,
     userId,
+    dateOfBirth,
   });
 
   res.status(httpStatus.OK).json({
@@ -180,9 +182,14 @@ export const approvePendingInvite = asyncWrapper(async (req: Request, res: Respo
     role,
   });
 
+  const message = result.userRole.needsGuardianLink
+    ? 'Pending invite approved successfully. Guardian linking is required before minor player can use player actions.'
+    : 'Pending invite approved successfully';
+
   res.status(httpStatus.OK).json({
     success: true,
-    message: 'Pending invite approved successfully',
+    message,
     data: result
   });
 });
+

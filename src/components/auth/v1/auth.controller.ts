@@ -6,9 +6,9 @@ import * as authService from './auth.service';
 import logger from '@core/utils/logger';
 
 export const signUp = asyncWrapper(async (req: Request, res: Response) => {
-  const { email, password, name, } = req.body;
+  const { email, password, name, dateOfBirth } = req.body;
 
-  const result = await authService.signUp({ email, password, name });
+  const result = await authService.signUp({ email, password, name, dateOfBirth });
 
   logger.info(`User signed up successfully: ${email}`);
 
@@ -110,6 +110,7 @@ export const getMe = asyncWrapper(async (req: Request, res: Response) => {
       email: user.email,
       email_verified: user.email_verified,
       avatar: user.avatar,
+      dateOfBirth: user.dateOfBirth,
     },
   });
 });
@@ -147,3 +148,5 @@ export const setActiveTeam = asyncWrapper(async (req: Request, res: Response) =>
     data: activeTeam,
   });
 });
+
+

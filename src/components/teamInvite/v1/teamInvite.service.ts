@@ -10,17 +10,28 @@ import { RoleName } from '@components/role/v1/role.interface';
 import { UserRoleStatus } from '@components/userRole/v1/userRole.interface';
 import { Player } from '@components/player/v1/player.model';
 import { splitDisplayNameForPlayer } from '@components/player/v1/playerName.util';
+import { attachGuardianLinkAsCoach } from '@components/guardianLink/v1/guardianLink.service';
 import { sendEmail } from '@shared/services/mail';
+import { isMinorFromDateOfBirth } from '@shared/utils/age.util';
+import { computeNeedsGuardianLink } from '@components/player/v1/playerOnboarding.util';
 import AppError from '@core/utils/appError';
 import httpStatus from 'http-status';
 import logger from '@core/utils/logger';
 import config from '@config/config';
 import { INVITE_EXPIRY_MS, INVITE_ERRORS } from './teamInvite.constants';
 
+export interface IInviteEntry {
+  email: string;
+  /** When inviting a future guardian to attach to this minor player after they join */
+  minorPlayerId?: string;
+}
+
 interface ICreateBatchInviteInput {
   teamId: string;
   invitedBy: string; // Coach user ID
-  emails: string[]; // Array of emails (max 20)
+  /** @deprecated Prefer inviteEntries when using minorPlayerId */
+  emails?: string[];
+  inviteEntries?: IInviteEntry[];
 }
 
 interface ICheckInviteInput {
@@ -31,6 +42,8 @@ interface IAcceptInviteInput {
   token: string;
   role: RoleName; // User chooses role
   userId: string; // Required - user must exist and be authenticated
+  /** Required for player role if the user has no dateOfBirth yet (ISO date) */
+  dateOfBirth?: Date | string;
 }
 
 interface IApprovePendingInviteInput {
@@ -47,22 +60,63 @@ interface IBatchInviteResult {
   }>;
 }
 
+const asIdString = (value: unknown): string => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (value instanceof Types.ObjectId) return value.toString();
+  if (typeof value === 'object' && value !== null && '_id' in value) {
+    const nested = (value as { _id?: unknown })._id;
+    if (typeof nested === 'string') return nested;
+    if (nested instanceof Types.ObjectId) return nested.toString();
+  }
+  return String(value);
+};
+
 /**
  * Create batch team invites (up to 20)
  * NO ROLE specified - user chooses when accepting
  * Optimized: Uses batch DB queries and async email queue
  */
+const validateMinorPlayerForGuardianInvite = async (
+  teamId: string,
+  minorPlayerId: string
+): Promise<void> => {
+  const player = await Player.findOne({
+    _id: new Types.ObjectId(minorPlayerId),
+    teamId: new Types.ObjectId(teamId)
+  }).select('dateOfBirth isMinor');
+
+  if (!player) {
+    throw new AppError(httpStatus.NOT_FOUND, 'minorPlayerId not found on this team');
+  }
+
+  const minor = player.dateOfBirth
+    ? isMinorFromDateOfBirth(new Date(player.dateOfBirth))
+    : player.isMinor;
+
+  if (!minor) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'minorPlayerId must reference a minor player on this team'
+    );
+  }
+};
+
 export const createBatchInvites = async (
   data: ICreateBatchInviteInput
 ): Promise<IBatchInviteResult> => {
-  const { teamId, invitedBy, emails } = data;
+  const { teamId, invitedBy } = data;
 
-  // Validate email count
-  if (emails.length === 0) {
+  const entries: IInviteEntry[] =
+    data.inviteEntries?.length
+      ? data.inviteEntries
+      : (data.emails ?? []).map((email) => ({ email }));
+
+  if (entries.length === 0) {
     throw new AppError(httpStatus.BAD_REQUEST, 'At least one email is required');
   }
 
-  if (emails.length > 20) {
+  if (entries.length > 20) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Maximum 20 emails allowed per batch');
   }
 
@@ -94,22 +148,36 @@ export const createBatchInvites = async (
     failed: []
   };
 
-  // Normalize and validate email format
-  const normalizedEmails = emails.map(e => e.toLowerCase().trim());
-  const validEmails: string[] = [];
-  const invalidEmails: string[] = [];
+  const validEntries: IInviteEntry[] = [];
 
-  for (const email of normalizedEmails) {
+  for (const raw of entries) {
+    const email = raw.email.toLowerCase().trim();
     if (!/^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$/.test(email)) {
-      invalidEmails.push(email);
       results.failed.push({
-        email,
+        email: raw.email,
         reason: 'Invalid email format'
       });
-    } else {
-      validEmails.push(email);
+      continue;
     }
+    try {
+      if (raw.minorPlayerId) {
+        await validateMinorPlayerForGuardianInvite(teamId, raw.minorPlayerId);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof AppError ? e.message : String(e);
+      results.failed.push({
+        email,
+        reason: msg
+      });
+      continue;
+    }
+    validEntries.push({
+      email,
+      ...(raw.minorPlayerId ? { minorPlayerId: raw.minorPlayerId } : {})
+    });
   }
+
+  const validEmails = validEntries.map((e) => e.email);
 
   if (validEmails.length === 0) {
     return results;
@@ -147,6 +215,7 @@ export const createBatchInvites = async (
     status: InviteStatus;
     token: string;
     expiresAt: Date;
+    minorPlayerId?: mongoose.Types.ObjectId;
   }> = [];
   const emailsToSend: Array<{ 
     to: string; 
@@ -154,7 +223,8 @@ export const createBatchInvites = async (
     data: Record<string, unknown> 
   }> = [];
 
-  for (const email of validEmails) {
+  for (const entry of validEntries) {
+    const { email, minorPlayerId } = entry;
     try {
       // Check if inviter is trying to invite themselves
       if (inviter.email.toLowerCase() === email) {
@@ -195,7 +265,10 @@ export const createBatchInvites = async (
         email,
         status: InviteStatus.PENDING,
         token,
-        expiresAt
+        expiresAt,
+        ...(minorPlayerId
+          ? { minorPlayerId: new mongoose.Types.ObjectId(minorPlayerId) }
+          : {})
       });
 
       // Queue email for async sending
@@ -314,7 +387,7 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     avatar?: string;
   };
 }> => {
-  const { token, role, userId } = data;
+  const { token, role, userId, dateOfBirth: inputDob } = data;
 
   // Find invite by token
   const invite = await TeamInvite.findOne({ token })
@@ -349,6 +422,13 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid role selected');
   }
 
+  if (invite.minorPlayerId && role !== RoleName.GUARDIAN) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This invite is reserved for a guardian joining to attach to a minor player'
+    );
+  }
+
   // User must exist and be authenticated
   if (!userId) {
     throw new AppError(httpStatus.BAD_REQUEST, 'User ID is required. User must be authenticated.');
@@ -371,6 +451,31 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
   // Ensure email is verified
   if (!user.email_verified) {
     user.email_verified = true;
+    await user.save();
+  }
+
+  if (role === RoleName.PLAYER) {
+    let dob: Date | undefined;
+    if (inputDob !== undefined && inputDob !== null && inputDob !== '') {
+      dob = new Date(inputDob);
+    } else if (user.dateOfBirth) {
+      dob = new Date(user.dateOfBirth);
+    }
+
+    if (!dob || Number.isNaN(dob.getTime())) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'dateOfBirth is required when accepting as a player'
+      );
+    }
+
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    if (dob.getTime() > today.getTime()) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'dateOfBirth cannot be in the future');
+    }
+
+    user.dateOfBirth = dob;
     await user.save();
   }
 
@@ -447,6 +552,7 @@ export const approvePendingInvite = async (data: IApprovePendingInviteInput): Pr
     teamId: string;
     role: RoleName;
     status: UserRoleStatus;
+    needsGuardianLink?: boolean;
   };
 }> => {
   const { inviteId, approvedBy, role } = data;
@@ -480,6 +586,13 @@ export const approvePendingInvite = async (data: IApprovePendingInviteInput): Pr
   const roleDoc = await Role.findOne({ name: role });
   if (!roleDoc) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid role selected');
+  }
+
+  if (invite.minorPlayerId && role !== RoleName.GUARDIAN) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This invite is reserved for a guardian joining to attach to a minor player'
+    );
   }
 
   // Enforce one active coach per team.
@@ -539,10 +652,14 @@ export const approvePendingInvite = async (data: IApprovePendingInviteInput): Pr
         userId: invite.acceptedBy,
         teamId: invite.teamId,
         firstName,
-        lastName,
+        lastName: lastName?.trim() || '-',
         hasEmail: true,
-        createdBy: invite.invitedBy
+        createdBy: invite.invitedBy,
+        dateOfBirth: acceptedUser.dateOfBirth
       });
+    } else if (acceptedUser.dateOfBirth && (!existingPlayer.dateOfBirth || new Date(existingPlayer.dateOfBirth).getTime() !== new Date(acceptedUser.dateOfBirth).getTime())) {
+      existingPlayer.dateOfBirth = acceptedUser.dateOfBirth;
+      await existingPlayer.save();
     }
   }
 
@@ -572,6 +689,23 @@ export const approvePendingInvite = async (data: IApprovePendingInviteInput): Pr
   invite.acceptedRole = role;
   await invite.save();
 
+  // For deferred guardian-link invites, attach only after guardian membership is active.
+  if (role === RoleName.GUARDIAN && invite.minorPlayerId) {
+    const inviteTeamId = asIdString(invite.teamId);
+    const acceptedById = asIdString(invite.acceptedBy);
+    await attachGuardianLinkAsCoach({
+      teamId: inviteTeamId,
+      coachUserId: approvedBy,
+      guardianUserId: acceptedById,
+      playerId: invite.minorPlayerId.toString()
+    });
+  }
+
+  const needsGuardianLink =
+    role === RoleName.PLAYER
+      ? await computeNeedsGuardianLink(asIdString(invite.acceptedBy), asIdString(invite.teamId))
+      : false;
+
   logger.info(
     `Pending invite approved: ${invite._id} by coach ${approvedBy} with role ${role}`
   );
@@ -583,6 +717,7 @@ export const approvePendingInvite = async (data: IApprovePendingInviteInput): Pr
       teamId: updatedUserRole.teamId.toString(),
       role: updatedUserRole.roleName,
       status: updatedUserRole.status,
+      ...(role === RoleName.PLAYER ? { needsGuardianLink } : {})
     }
   };
 };
@@ -740,3 +875,4 @@ export const resendInvite = async (
 
   logger.info(`Invite resent: ${inviteId}`);
 };
+

@@ -21,6 +21,8 @@ export interface ITeamInvite extends Document {
   expiresAt: Date; // When invite expires
   acceptedRole?: RoleName; // Role chosen by user when accepting
   acceptedAt?: Date; // When accepted
+  /** When inviting a guardian to link to an existing minor player after they join */
+  minorPlayerId?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }

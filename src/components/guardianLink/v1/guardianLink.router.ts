@@ -4,7 +4,8 @@ import {
   verifyToken,
   requireEmailVerified,
   extractTeamContext,
-  requireTeamMember
+  requireTeamMember,
+  requireTeamAdmin
 } from '@components/auth/v1/auth.middleware';
 import * as guardianLinkController from './guardianLink.controller';
 import * as guardianLinkValidation from './guardianLink.validation';
@@ -13,14 +14,14 @@ const router = Router();
 
 /**
  * POST /api/v1/teams/:teamId/guardian-links
- * Request a guardian-player link in a team.
+ * Coach/admin attaches guardian to player.
  */
 router.post(
   '/:teamId/guardian-links',
   verifyToken,
   requireEmailVerified,
   extractTeamContext,
-  requireTeamMember,
+  requireTeamAdmin,
   validate(guardianLinkValidation.requestGuardianLinkSchema),
   guardianLinkController.requestGuardianLink
 );
@@ -39,7 +40,7 @@ router.get(
 
 /**
  * PUT /api/v1/teams/:teamId/guardian-links/:linkId/approve
- * Approve a pending guardian link.
+ * Deprecated in coach-centric flow.
  */
 router.put(
   '/:teamId/guardian-links/:linkId/approve',
@@ -53,7 +54,7 @@ router.put(
 
 /**
  * PUT /api/v1/teams/:teamId/guardian-links/:linkId/reject
- * Reject a pending guardian link.
+ * Deprecated in coach-centric flow.
  */
 router.put(
   '/:teamId/guardian-links/:linkId/reject',
@@ -80,4 +81,3 @@ router.delete(
 );
 
 export default router;
-

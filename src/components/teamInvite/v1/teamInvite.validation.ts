@@ -2,102 +2,63 @@ import Joi from 'joi';
 import { ValidationSchema } from '@core/middlewares/validate.middleware';
 import { RoleName } from '@components/role/v1/role.interface';
 
+const inviteEntrySchema = Joi.object({
+  email: Joi.string().email().required().messages({
+    'string.email': 'Each email must be valid',
+    'any.required': 'Email is required'
+  }),
+  minorPlayerId: Joi.string().trim().optional()
+});
+
 export const createBatchInviteSchema: ValidationSchema = {
   body: Joi.object({
-    emails: Joi.array()
-      .items(
-        Joi.string().email().messages({
-          'string.email': 'Each email must be valid'
-        })
-      )
-      .min(1)
-      .max(20)
-      .required()
-      .messages({
-        'array.min': 'At least one email is required',
-        'array.max': 'Maximum 20 emails allowed',
-        'any.required': 'Emails array is required'
-      })
+    emails: Joi.array().items(Joi.string().email()).max(20).optional(),
+    inviteEntries: Joi.array().items(inviteEntrySchema).max(20).optional()
   })
+    .or('emails', 'inviteEntries')
+    .messages({
+      'object.missing': 'Either emails or inviteEntries is required'
+    })
 };
 
 export const checkInviteSchema: ValidationSchema = {
   query: Joi.object({
-    token: Joi.string()
-      .required()
-      .length(64)
-      .messages({
-        'string.empty': 'Token is required',
-        'string.length': 'Invalid token format'
-      })
+    token: Joi.string().required().length(64).messages({
+      'string.empty': 'Token is required',
+      'string.length': 'Invalid token format'
+    })
   })
 };
 
 export const acceptInviteSchema: ValidationSchema = {
   body: Joi.object({
-    token: Joi.string()
-      .required()
-      .length(64)
-      .messages({
-        'string.empty': 'Token is required',
-        'string.length': 'Invalid token format'
-      }),
-    role: Joi.string()
-      .valid(...Object.values(RoleName))
-      .required()
-      .messages({
-        'any.only': `Role must be one of: ${Object.values(RoleName).join(', ')}`,
-        'any.required': 'Role is required'
-      }),
-    userData: Joi.object({
-      name: Joi.string()
-        .trim()
-        .min(2)
-        .max(100)
-        .optional()
-        .messages({
-          'string.min': 'Name must be at least 2 characters',
-          'string.max': 'Name cannot exceed 100 characters'
-        }),
-      password: Joi.string()
-        .min(8)
-        .optional()
-        .messages({
-          'string.min': 'Password must be at least 8 characters'
-        }),
-      phone: Joi.string()
-        .trim()
-        .max(20)
-        .optional()
-        .messages({
-          'string.max': 'Phone cannot exceed 20 characters'
-        })
+    token: Joi.string().required().length(64).messages({
+      'string.empty': 'Token is required',
+      'string.length': 'Invalid token format'
+    }),
+    role: Joi.string().valid(...Object.values(RoleName)).required().messages({
+      'any.only': `Role must be one of: ${Object.values(RoleName).join(', ')}`,
+      'any.required': 'Role is required'
+    }),
+    dateOfBirth: Joi.date().iso().optional().messages({
+      'date.format': 'dateOfBirth must be an ISO date string'
     })
-      .optional()
-      .messages({
-        'object.base': 'userData must be an object'
-      })
   })
 };
 
 export const getInviteByTokenSchema: ValidationSchema = {
   query: Joi.object({
-    token: Joi.string()
-      .required()
-      .length(64)
-      .messages({
-        'string.empty': 'Token is required'
-      })
+    token: Joi.string().required().length(64).messages({
+      'string.empty': 'Token is required'
+    })
   })
 };
 
 export const cancelInviteSchema: ValidationSchema = {
   params: Joi.object({
-    inviteId: Joi.string()
-      .required()
-      .messages({
-        'string.empty': 'Invite ID is required'
-      })
+    inviteId: Joi.string().required().messages({
+      'string.empty': 'Invite ID is required'
+    })
   })
 };
 
@@ -114,19 +75,14 @@ export const getUserInvitesSchema: ValidationSchema = {
 
 export const approvePendingInviteSchema: ValidationSchema = {
   params: Joi.object({
-    inviteId: Joi.string()
-      .required()
-      .messages({
-        'string.empty': 'Invite ID is required'
-      })
+    inviteId: Joi.string().required().messages({
+      'string.empty': 'Invite ID is required'
+    })
   }),
   body: Joi.object({
-    role: Joi.string()
-      .valid(...Object.values(RoleName))
-      .required()
-      .messages({
-        'any.only': `Role must be one of: ${Object.values(RoleName).join(', ')}`,
-        'any.required': 'Role is required'
-      })
+    role: Joi.string().valid(...Object.values(RoleName)).required().messages({
+      'any.only': `Role must be one of: ${Object.values(RoleName).join(', ')}`,
+      'any.required': 'Role is required'
+    })
   })
 };

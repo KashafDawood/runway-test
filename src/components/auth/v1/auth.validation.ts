@@ -14,6 +14,9 @@ export const signUpValidation: ValidationSchema = {
     name: Joi.string().required().trim().messages({
       'any.required': 'Name is required',
     }),
+    dateOfBirth: Joi.date().iso().optional().messages({
+      'date.format': 'dateOfBirth must be an ISO date string',
+    }),
     teamName: Joi.string().optional().trim().messages({
       'string.base': 'Team name must be a string',
     }),
@@ -88,3 +91,4 @@ export const setActiveTeamValidation: ValidationSchema = {
     }),
   }),
 };
+

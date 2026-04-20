@@ -14,11 +14,13 @@ import { sendEmail } from '@shared/services/mail';
 import AppError from '@core/utils/appError';
 import config from '@config/config';
 import logger from '@core/utils/logger';
+import { computeNeedsGuardianLink } from '@components/player/v1/playerOnboarding.util';
 
 interface ISignUpInput {
   email: string;
   password: string;
   name: string;
+  dateOfBirth?: Date | string;
 }
 
 interface ISignUpResponse {
@@ -61,7 +63,7 @@ const generateVerificationCode = (): string => {
 }
 
 export const signUp = async (input: ISignUpInput): Promise<ISignUpResponse> => {
-  const { email, password, name } = input;
+  const { email, password, name, dateOfBirth } = input;
 
   // Check if user already exists
   const existingUser = await UserModel.findOne({ email });
@@ -78,6 +80,7 @@ export const signUp = async (input: ISignUpInput): Promise<ISignUpResponse> => {
     email,
     password: hashedPassword,
     email_verified: false,
+    ...(dateOfBirth ? { dateOfBirth: new Date(dateOfBirth) } : {})
   });
 
   // No role assignment at signup - roles will be assigned after verification
@@ -375,12 +378,18 @@ export const getActiveTeam = async (userId: string) => {
 
   const teamDoc = user.activeTeamId as unknown as { _id: string; name: string; sport?: string; season?: string };
 
+  const needsGuardianLink =
+    userRole.roleName === RoleName.PLAYER
+      ? await computeNeedsGuardianLink(user._id.toString(), teamDoc._id.toString())
+      : false;
+
   return {
     id: teamDoc._id,
     name: teamDoc.name,
     sport: teamDoc.sport,
     season: teamDoc.season,
     role: userRole.roleName,
+    ...(userRole.roleName === RoleName.PLAYER ? { needsGuardianLink } : {})
   };
 };
 
@@ -418,11 +427,19 @@ export const setActiveTeam = async (userId: string, teamId: string) => {
   // Update user's active team
   await UserModel.findByIdAndUpdate(userId, { activeTeamId: teamId });
 
+  const needsGuardianLink =
+    userRole.roleName === RoleName.PLAYER
+      ? await computeNeedsGuardianLink(userId, team._id.toString())
+      : false;
+
   return {
     id: team._id,
     name: team.name,
     sport: team.sport,
     season: team.season,
     role: userRole.roleName,
+    ...(userRole.roleName === RoleName.PLAYER ? { needsGuardianLink } : {})
   };
 };
+
+

@@ -18,6 +18,9 @@ export interface IUser extends Document {
   // Notification preferences (Phase 1: global on/off)
   notificationsEnabled?: boolean;
 
+  /** Account-level DOB; synced to Player roster rows for age/minor logic */
+  dateOfBirth?: Date;
+
   created_at: Date;
   updated_at: Date;
 }

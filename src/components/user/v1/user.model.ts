@@ -53,6 +53,10 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: true,
     },
+    dateOfBirth: {
+      type: Date,
+      default: undefined,
+    },
   },
   {
     timestamps: {
