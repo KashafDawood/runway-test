@@ -531,6 +531,22 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     `Invite accepted by user and pending approval: ${invite._id} by user ${user._id} with role ${role}`
   );
 
+  // Notify the inviting coach that a member has accepted and is pending approval
+  const invitedBy = invite.invitedBy as unknown as { name: string; email: string };
+  const teamDoc = invite.teamId as unknown as { name: string };
+  const manageTeamUrl = `${config.app.frontEndUrl}/manage-team`;
+
+  sendEmail('joinRequest', invitedBy.email, {
+    coachName: invitedBy.name,
+    memberName: user.name,
+    memberEmail: user.email,
+    teamName: teamDoc.name,
+    role,
+    manageTeamUrl,
+  }).catch((err) => {
+    logger.warn(`Failed to send join-request email to coach ${invitedBy.email}: ${err?.message}`);
+  });
+
   // Remove password from response
   const userObj = user.toObject();
   delete userObj.password;

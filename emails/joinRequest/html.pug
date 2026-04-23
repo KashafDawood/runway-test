@@ -1,0 +1,13 @@
+extends ../baseEmail
+
+block content
+  p Hi #{coachName},
+
+  p <strong>#{memberName}</strong> (#{memberEmail}) has accepted their invitation and is requesting to join <strong>#{teamName}</strong> as a <strong>#{role}</strong>.
+
+  p Log in to Runway to review and approve their request.
+
+  .button-container
+    a(href=manageTeamUrl class="button") Review Request
+
+  p.small If you were not expecting this request or have any questions, you can safely ignore this email.
