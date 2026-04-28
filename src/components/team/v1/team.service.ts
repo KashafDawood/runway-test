@@ -116,29 +116,36 @@ export const getTeamById = async (teamId: string): Promise<ITeam> => {
 };
 
 /**
- * Get all teams where user is a member
+ * Get all teams where user is a member (includes `role` / membership roleName per team)
  * @param userId - User ID
- * @returns Array of teams
+ * @returns Array of team documents with role field
  */
-export const getUserTeams = async (userId: string): Promise<ITeam[]> => {
-  // Get all active user roles
+export const getUserTeams = async (userId: string) => {
   const userRoles = await UserRole.find({
     userId,
     status: UserRoleStatus.ACTIVE
-  }).select('teamId');
+  }).select('teamId roleName');
 
   if (userRoles.length === 0) {
     return [];
   }
 
-  const teamIds = userRoles.map(ur => ur.teamId);
+  const roleByTeamId = new Map(
+    userRoles.map((ur) => [ur.teamId.toString(), ur.roleName as RoleName])
+  );
 
-  // Fetch teams
+  const teamIds = userRoles.map((ur) => ur.teamId);
+
   const teams = await Team.find({
     _id: { $in: teamIds }
-  }).populate('createdBy', 'name email');
+  })
+    .populate('createdBy', 'name email')
+    .lean();
 
-  return teams;
+  return teams.map((team: Record<string, unknown> & { _id: { toString: () => string } }) => ({
+    ...team,
+    role: roleByTeamId.get(team._id.toString()) as RoleName
+  }));
 };
 
 /**

@@ -46,6 +46,9 @@ interface IAuthResponse {
     id: string;
     name: string;
     role: RoleName;
+    sport?: string;
+    season?: string;
+    needsGuardianLink?: boolean;
   };
   token: string;
   verificationCode?: string; // For testing email verification
@@ -147,13 +150,48 @@ export const signIn = async (email: string, password: string): Promise<IAuthResp
     email_verified: user.email_verified,
   });
 
-  // Get user's teams (optional, for convenience)
-  const userTeams = await UserRole.find({
-    userId: user._id,
-    status: UserRoleStatus.ACTIVE
-  })
-    .populate('teamId', 'name sport season')
-    .limit(1); // Get first team for backward compatibility
+  const userRecord = await UserModel.findById(user._id).select('activeTeamId');
+  const preferredTeamId = userRecord?.activeTeamId;
+
+  let membership = null;
+  if (preferredTeamId) {
+    membership = await UserRole.findOne({
+      userId: user._id,
+      teamId: preferredTeamId,
+      status: UserRoleStatus.ACTIVE
+    }).populate('teamId', 'name sport season');
+  }
+  if (!membership) {
+    membership = await UserRole.findOne({
+      userId: user._id,
+      status: UserRoleStatus.ACTIVE
+    })
+      .sort({ joinedAt: -1 })
+      .populate('teamId', 'name sport season');
+  }
+
+  let sessionTeam: IAuthResponse['team'];
+  if (membership?.teamId) {
+    const teamDoc = membership.teamId as unknown as {
+      _id: string;
+      name: string;
+      sport?: string;
+      season?: string;
+    };
+    const needsGuardianLink =
+      membership.roleName === RoleName.PLAYER
+        ? await computeNeedsGuardianLink(user._id.toString(), teamDoc._id.toString())
+        : false;
+
+    sessionTeam = {
+      id: teamDoc._id.toString(),
+      name: teamDoc.name,
+      sport: teamDoc.sport,
+      season: teamDoc.season,
+      role: membership.roleName,
+      ...(membership.roleName === RoleName.PLAYER ? { needsGuardianLink } : {})
+    };
+  }
 
   return {
     user: {
@@ -163,11 +201,7 @@ export const signIn = async (email: string, password: string): Promise<IAuthResp
       email_verified: user.email_verified,
       avatar: user.avatar,
     },
-    team: userTeams[0] ? {
-      id: (userTeams[0].teamId as unknown as { _id: string; name: string })._id,
-      name: (userTeams[0].teamId as unknown as { _id: string; name: string }).name,
-      role: userTeams[0].roleName
-    } : undefined,
+    ...(sessionTeam ? { team: sessionTeam } : {}),
     token,
   };
 };
