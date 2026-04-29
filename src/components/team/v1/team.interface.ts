@@ -6,6 +6,8 @@ export interface ITeam extends Document {
   season?: string;
   color?: string;
   sport?: string;
+  logoPath?: string;
+  coverImagePath?: string;
   createdBy: Types.ObjectId;
   settings: {
     allowPlayerInvites: boolean;

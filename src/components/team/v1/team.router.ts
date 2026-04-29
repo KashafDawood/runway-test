@@ -9,6 +9,7 @@ import {
 } from '@components/auth/v1/auth.middleware';
 import * as teamController from './team.controller';
 import * as teamValidation from './team.validation';
+import { handleTeamImageUpload } from './teamImageUpload.middleware';
 
 const router = Router();
 
@@ -26,7 +27,8 @@ router.post(
   '/',
   verifyToken,
   requireEmailVerified,
-  // validate(teamValidation.createTeamSchema),
+  ...handleTeamImageUpload,
+  validate(teamValidation.createTeamSchema),
   teamController.createTeam
 );
 
@@ -71,6 +73,7 @@ router.put(
   requireEmailVerified,
   extractTeamContext,
   requireTeamAdmin,
+  ...handleTeamImageUpload,
   validate(teamValidation.updateTeamSchema),
   teamController.updateTeam
 );

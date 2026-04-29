@@ -26,13 +26,15 @@ export const createTeam = asyncWrapper(async (req: Request, res: Response) => {
     throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
   }
 
-  const { name, sport, season, color, settings } = req.body;
+  const { name, sport, season, color, logoPath, coverImagePath, settings } = req.body;
 
   const team = await teamService.createTeam(userId, {
     name,
     sport,
     season,
     color,
+    logoPath,
+    coverImagePath,
     settings
   });
 
@@ -93,7 +95,7 @@ export const getMyTeams = asyncWrapper(async (req: Request, res: Response) => {
 export const updateTeam = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
   const { teamId } = req.params;
-  const { name, sport, season, color, settings } = req.body;
+  const { name, sport, season, color, logoPath, coverImagePath, settings } = req.body;
 
   if (!userId) {
     throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
@@ -104,6 +106,8 @@ export const updateTeam = asyncWrapper(async (req: Request, res: Response) => {
     sport,
     season,
     color,
+    logoPath,
+    coverImagePath,
     settings
   });
 

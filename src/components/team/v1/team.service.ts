@@ -13,6 +13,8 @@ interface ICreateTeamInput {
   sport?: string;
   season?: string;
   color?: string;
+  logoPath?: string;
+  coverImagePath?: string;
   settings?: {
     allowPlayerInvites?: boolean;
     requireGuardianApproval?: boolean;
@@ -24,6 +26,8 @@ interface IUpdateTeamInput {
   sport?: string;
   season?: string;
   color?: string;
+  logoPath?: string;
+  coverImagePath?: string;
   settings?: {
     allowPlayerInvites?: boolean;
     requireGuardianApproval?: boolean;
@@ -36,6 +40,8 @@ interface ITeamResponse {
   sport?: string;
   season?: string;
   color?: string;
+  logoPath?: string;
+  coverImagePath?: string;
   createdBy: string;
   settings: {
     allowPlayerInvites: boolean;
@@ -68,6 +74,8 @@ export const createTeam = async (
     sport: data.sport,
     season: data.season,
     color: data.color,
+    logoPath: data.logoPath,
+    coverImagePath: data.coverImagePath,
     settings: data.settings || {
       allowPlayerInvites: false,
       requireGuardianApproval: true
@@ -93,6 +101,8 @@ export const createTeam = async (
     sport: team.sport,
     season: team.season,
     color: team.color,
+    logoPath: team.logoPath,
+    coverImagePath: team.coverImagePath,
     createdBy: team.createdBy.toString(),
     settings: team.settings,
     createdAt: team.createdAt,
@@ -184,6 +194,8 @@ export const updateTeam = async (
   if (data.sport) updateData.sport = data.sport;
   if (data.season) updateData.season = data.season;
   if (data.color) updateData.color = data.color;
+  if (data.logoPath !== undefined) updateData.logoPath = data.logoPath;
+  if (data.coverImagePath !== undefined) updateData.coverImagePath = data.coverImagePath;
   if (data.settings) {
     updateData.settings = { ...team.settings, ...data.settings };
   }
@@ -202,6 +214,8 @@ export const updateTeam = async (
     sport: updatedTeam.sport,
     season: updatedTeam.season,
     color: updatedTeam.color,
+    logoPath: updatedTeam.logoPath,
+    coverImagePath: updatedTeam.coverImagePath,
     createdBy: updatedTeam.createdBy.toString(),
     settings: updatedTeam.settings,
     createdAt: updatedTeam.createdAt,

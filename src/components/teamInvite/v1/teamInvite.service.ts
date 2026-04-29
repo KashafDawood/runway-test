@@ -72,6 +72,33 @@ const asIdString = (value: unknown): string => {
   return String(value);
 };
 
+type InviteRecipientSummary = {
+  _id: Types.ObjectId | string;
+  name: string;
+  email: string;
+  avatar?: string | null;
+  age?: number;
+  playerId?: string;
+};
+
+type AugmentedTeamInvite = ITeamInvite & {
+  recipient?: InviteRecipientSummary;
+};
+
+const calculateAge = (dateOfBirth?: Date | string | null): number | undefined => {
+  if (!dateOfBirth) return undefined;
+  const dob = new Date(dateOfBirth);
+  if (Number.isNaN(dob.getTime())) return undefined;
+
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+    age -= 1;
+  }
+  return age >= 0 ? age : undefined;
+};
+
 /**
  * Create batch team invites (up to 20)
  * NO ROLE specified - user chooses when accepting
@@ -126,15 +153,15 @@ export const createBatchInvites = async (
     throw new AppError(httpStatus.NOT_FOUND, 'Team not found');
   }
 
-  // Verify inviter is a coach in this team
+  // Verify inviter is a team manager in this team
   const inviterRole = await UserRole.findOne({
     userId: invitedBy,
     teamId,
     status: UserRoleStatus.ACTIVE
   });
 
-  if (!inviterRole || inviterRole.roleName !== RoleName.COACH) {
-    throw new AppError(httpStatus.FORBIDDEN, INVITE_ERRORS.NOT_COACH);
+  if (!inviterRole || ![RoleName.COACH, RoleName.ASSISTANT_COACH].includes(inviterRole.roleName)) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Only team managers can create invites');
   }
 
   // Get inviter details for email
@@ -595,8 +622,8 @@ export const approvePendingInvite = async (data: IApprovePendingInviteInput): Pr
     status: UserRoleStatus.ACTIVE
   });
 
-  if (!coachRole || coachRole.roleName !== RoleName.COACH) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Only coaches can approve pending invites');
+  if (!coachRole || ![RoleName.COACH, RoleName.ASSISTANT_COACH].includes(coachRole.roleName)) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Only team managers can approve pending invites');
   }
 
   const roleDoc = await Role.findOne({ name: role });
@@ -673,7 +700,12 @@ export const approvePendingInvite = async (data: IApprovePendingInviteInput): Pr
         createdBy: invite.invitedBy,
         dateOfBirth: acceptedUser.dateOfBirth
       });
-    } else if (acceptedUser.dateOfBirth && (!existingPlayer.dateOfBirth || new Date(existingPlayer.dateOfBirth).getTime() !== new Date(acceptedUser.dateOfBirth).getTime())) {
+    } else if (
+      acceptedUser.dateOfBirth &&
+      (!existingPlayer.dateOfBirth ||
+        new Date(existingPlayer.dateOfBirth).getTime() !==
+          new Date(acceptedUser.dateOfBirth).getTime())
+    ) {
       existingPlayer.dateOfBirth = acceptedUser.dateOfBirth;
       await existingPlayer.save();
     }
@@ -739,20 +771,20 @@ export const approvePendingInvite = async (data: IApprovePendingInviteInput): Pr
 };
 
 /**
- * Get all invites for a team (for coaches to see)
+ * Get all invites for a team (for team managers to see)
  */
 export const getTeamInvites = async (
   teamId: string,
   userId: string
 ): Promise<ITeamInvite[]> => {
-  // Verify user is coach
+  // Verify user is team manager
   const userRole = await UserRole.findOne({
     userId,
     teamId,
     status: UserRoleStatus.ACTIVE
   });
 
-  if (!userRole || userRole.roleName !== RoleName.COACH) {
+  if (!userRole || ![RoleName.COACH, RoleName.ASSISTANT_COACH].includes(userRole.roleName)) {
     throw new AppError(
       httpStatus.FORBIDDEN,
       'You do not have permission to access this resource.',
@@ -761,10 +793,55 @@ export const getTeamInvites = async (
 
   const invites = await TeamInvite.find({ teamId })
     .populate('invitedBy', 'name email')
-    .populate('acceptedBy', 'name email')
+    .populate('acceptedBy', 'name email avatar')
     .sort({ createdAt: -1 });
 
-  return invites;
+  // Augment invites with recipient metadata when possible so the frontend can
+  // show human-friendly names and associated player IDs (if the invite email
+  // belongs to an existing user who already has a Player row on this team).
+  const inviteObjs = invites.map((inv) => inv.toObject() as AugmentedTeamInvite);
+
+  // Collect all invite emails to lookup users in a single query
+  const emails = Array.from(new Set(inviteObjs.map((i) => String(i.email).toLowerCase()))).filter(Boolean);
+  if (emails.length === 0) return inviteObjs as unknown as ITeamInvite[];
+
+  const users = await UserModel.find({ email: { $in: emails } }).select('name email avatar dateOfBirth _id');
+  const userByEmail = new Map(users.map((u) => [String(u.email).toLowerCase(), u]));
+
+  // Find any Player rows for these users on this team so we can return playerId
+  const userIds = users.map((u) => u._id);
+  const players =
+    userIds.length > 0
+      ? await Player.find({ userId: { $in: userIds }, teamId }).select('_id userId dateOfBirth')
+      : [];
+  const playerByUserId = new Map(players.map((p) => [String(p.userId), p]));
+
+  // Attach a `recipient` object to each invite when we can resolve a user
+  for (const invObj of inviteObjs) {
+    try {
+      const emailKey = String(invObj.email || '').toLowerCase();
+      const user = userByEmail.get(emailKey);
+      if (user) {
+        const player = playerByUserId.get(String(user._id));
+        // Attach a lightweight recipient object so frontend can show name and
+        // select playerId when creating player-specific notes.
+        // Do not modify the DB; this is only for the response payload.
+        invObj.recipient = {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar ?? null,
+          age: calculateAge(player?.dateOfBirth ?? user.dateOfBirth),
+          playerId: player ? String(player._id) : undefined,
+        };
+      }
+    } catch (err) {
+      // If augmentation fails for any invite, log and continue returning base invite data
+      logger.warn(`Failed to augment invite ${invObj._id} with recipient info: ${err}`);
+    }
+  }
+
+  return inviteObjs as unknown as ITeamInvite[];
 };
 
 /**
@@ -825,15 +902,15 @@ export const cancelInvite = async (
     throw new AppError(httpStatus.NOT_FOUND, 'Invite not found');
   }
 
-  // Verify user is coach in team
+  // Verify user is team manager in team
   const userRole = await UserRole.findOne({
     userId,
     teamId: invite.teamId,
     status: UserRoleStatus.ACTIVE
   });
 
-  if (!userRole || userRole.roleName !== RoleName.COACH) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Only coaches can cancel invites');
+  if (!userRole || ![RoleName.COACH, RoleName.ASSISTANT_COACH].includes(userRole.roleName)) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Only team managers can cancel invites');
   }
 
   if (invite.status !== InviteStatus.PENDING) {
@@ -861,15 +938,15 @@ export const resendInvite = async (
     throw new AppError(httpStatus.NOT_FOUND, 'Invite not found');
   }
 
-  // Verify user is coach
+  // Verify user is team manager
   const userRole = await UserRole.findOne({
     userId,
     teamId: invite.teamId,
     status: UserRoleStatus.ACTIVE
   });
 
-  if (!userRole || userRole.roleName !== RoleName.COACH) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Only coaches can resend invites');
+  if (!userRole || ![RoleName.COACH, RoleName.ASSISTANT_COACH].includes(userRole.roleName)) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Only team managers can resend invites');
   }
 
   if (invite.status !== InviteStatus.PENDING) {
