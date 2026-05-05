@@ -93,3 +93,15 @@ export const setActiveTeamValidation: ValidationSchema = {
   }),
 };
 
+export const changePasswordValidation: ValidationSchema = {
+  body: Joi.object().keys({
+    currentPassword: Joi.string().required().messages({
+      'any.required': 'Current password is required',
+    }),
+    newPassword: Joi.string().min(6).required().messages({
+      'string.min': 'Password must be at least 6 characters long',
+      'any.required': 'New password is required',
+    }),
+  }),
+};
+

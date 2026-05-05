@@ -101,6 +101,24 @@ export const resetPassword = asyncWrapper(async (req: Request, res: Response) =>
   });
 });
 
+export const changePassword = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Unauthorized');
+  }
+
+  const { currentPassword, newPassword } = req.body;
+
+  await authService.changePassword(userId, currentPassword, newPassword);
+
+  logger.info(`Password changed for user: ${userId}`);
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    message: 'Password changed successfully',
+  });
+});
+
 export const getMe = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
 

@@ -380,6 +380,35 @@ export const resetPassword = async (token: string, newPassword: string): Promise
   });
 };
 
+export const changePassword = async (
+  userId: string,
+  currentPassword: string,
+  newPassword: string
+): Promise<void> => {
+  const user = await UserModel.findById(userId).select('+password');
+
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, 'User not found');
+  }
+
+  const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+  if (!isPasswordValid) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Current password is incorrect');
+  }
+
+  if (newPassword === currentPassword) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'New password must be different from current password');
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  await UserModel.findByIdAndUpdate(userId, { password: hashedPassword });
+
+  await TokenModel.deleteMany({
+    user: userId,
+    type: TOKEN_TYPES.PASSWORD_RESET,
+  });
+};
+
 export const getUserProfile = async (userId: string): Promise<IUser> => {
   const user = await UserModel.findById(userId);
 

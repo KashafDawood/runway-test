@@ -1,71 +1,30 @@
-import fs from 'fs/promises';
-import path from 'path';
 import { randomUUID } from 'crypto';
-import multer from 'multer';
 import { NextFunction, Request, Response } from 'express';
 import httpStatus from 'http-status';
 import AppError from '@core/utils/appError';
+import { imageUploader, storeImage, type UploadedImage } from '@shared/services/imageStorage';
 
-const UPLOAD_ROOT_DIR = path.join(process.cwd(), 'public', 'uploads', 'teams');
-const RELATIVE_UPLOAD_BASE = '/uploads/teams';
-const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
-const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: MAX_IMAGE_SIZE_BYTES
-  },
-  fileFilter: (_req, file, cb) => {
-    if (!ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype)) {
-      return cb(new AppError(httpStatus.BAD_REQUEST, 'Only JPG, PNG, and WebP images are allowed'));
-    }
-    cb(null, true);
-  }
-});
-
-const teamImageFieldsMiddleware = upload.fields([
-  { name: 'logo', maxCount: 1 },
-  { name: 'coverImage', maxCount: 1 }
-]);
-
-type UploadedFile = {
+type UploadedMulterFile = {
   originalname: string;
   mimetype: string;
   buffer: Buffer;
 };
 
 type UploadedTeamFiles = {
-  logo?: UploadedFile[];
-  coverImage?: UploadedFile[];
+  logo?: UploadedMulterFile[];
+  coverImage?: UploadedMulterFile[];
 };
 
-const sanitizeFileName = (value: string): string => value.replace(/[^a-zA-Z0-9._-]/g, '_');
+const teamImageFieldsMiddleware = imageUploader.fields([
+  { name: 'logo', maxCount: 1 },
+  { name: 'coverImage', maxCount: 1 },
+]);
 
-const getExtensionFromMimeType = (mimetype: string): string => {
-  if (mimetype === 'image/jpeg') return '.jpg';
-  if (mimetype === 'image/png') return '.png';
-  return '.webp';
-};
-
-const storeTeamImage = async (
-  file: UploadedFile,
-  type: 'logo' | 'coverImage',
-  teamFolder: string
-): Promise<string> => {
-  const ext = path.extname(file.originalname) || getExtensionFromMimeType(file.mimetype);
-  const safeOriginal = sanitizeFileName(path.basename(file.originalname, path.extname(file.originalname)));
-  const uniqueSegment = `${Date.now()}-${randomUUID().slice(0, 8)}`;
-  const fileName = `${type}-${safeOriginal || 'image'}-${uniqueSegment}${ext.toLowerCase()}`;
-
-  const dirPath = path.join(UPLOAD_ROOT_DIR, teamFolder, type);
-  await fs.mkdir(dirPath, { recursive: true });
-
-  const absolutePath = path.join(dirPath, fileName);
-  await fs.writeFile(absolutePath, file.buffer);
-
-  return `${RELATIVE_UPLOAD_BASE}/${teamFolder}/${type}/${fileName}`;
-};
+const toUploadedImage = (file: UploadedMulterFile): UploadedImage => ({
+  originalname: file.originalname,
+  mimetype: file.mimetype,
+  buffer: file.buffer,
+});
 
 const processTeamUploads = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -76,11 +35,17 @@ const processTeamUploads = async (req: Request, _res: Response, next: NextFuncti
     const coverFile = files.coverImage?.[0];
 
     if (logoFile) {
-      req.body.logoPath = await storeTeamImage(logoFile, 'logo', teamFolder);
+      req.body.logoPath = await storeImage(toUploadedImage(logoFile), {
+        keyParts: ['teams', teamFolder, 'logo'],
+        namePrefix: 'logo',
+      });
     }
 
     if (coverFile) {
-      req.body.coverImagePath = await storeTeamImage(coverFile, 'coverImage', teamFolder);
+      req.body.coverImagePath = await storeImage(toUploadedImage(coverFile), {
+        keyParts: ['teams', teamFolder, 'coverImage'],
+        namePrefix: 'coverImage',
+      });
     }
 
     if (typeof req.body.settings === 'string') {
@@ -97,7 +62,4 @@ const processTeamUploads = async (req: Request, _res: Response, next: NextFuncti
   }
 };
 
-export const handleTeamImageUpload = [
-  teamImageFieldsMiddleware,
-  processTeamUploads
-];
+export const handleTeamImageUpload = [teamImageFieldsMiddleware, processTeamUploads];

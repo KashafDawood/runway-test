@@ -40,6 +40,14 @@ router.post(
 
 router.get('/me', verifyToken, authController.getMe);
 
+router.post(
+  '/change-password',
+  verifyToken,
+  requireEmailVerified,
+  validate(authValidation.changePasswordValidation),
+  authController.changePassword,
+);
+
 // Active team routes
 router.get(
   '/active-team',
