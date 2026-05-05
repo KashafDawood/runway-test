@@ -143,6 +143,31 @@ export const deleteTeam = asyncWrapper(async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/v1/teams/:teamId/members
+ * List all active members of a team with role + profile + (optional) player info.
+ *
+ * AUTHENTICATION: Required
+ * TEAM MEMBER: Required (any role)
+ *
+ * Returns active members sourced from UserRole (source of truth for roles), so a
+ * role change immediately reflects in the response without touching invites.
+ */
+export const getTeamMembers = asyncWrapper(async (req: Request, res: Response) => {
+  const { teamId } = req.params;
+
+  if (!teamId) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Team ID is required');
+  }
+
+  const members = await teamService.getTeamMembers(teamId);
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: { members },
+  });
+});
+
+/**
  * POST /api/v1/teams/:teamId/members
  * Add member to team
  * 

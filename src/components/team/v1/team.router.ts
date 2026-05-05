@@ -95,6 +95,24 @@ router.delete(
 );
 
 /**
+ * LIST TEAM MEMBERS
+ * GET /api/v1/teams/:teamId/members
+ *
+ * ✅ Authentication: Required
+ * ✅ Team Member: Required (any role)
+ *
+ * Returns active members sourced from UserRole — role updates flow through immediately.
+ */
+router.get(
+  '/:teamId/members',
+  verifyToken,
+  extractTeamContext,
+  requireTeamMember,
+  validate(teamValidation.getTeamSchema),
+  teamController.getTeamMembers
+);
+
+/**
  * ADD TEAM MEMBER
  * POST /api/v1/teams/:teamId/members
  * 

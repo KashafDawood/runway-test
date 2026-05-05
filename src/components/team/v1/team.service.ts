@@ -3,6 +3,7 @@ import { UserRole } from '@components/userRole/v1/userRole.model';
 import { RoleName } from '@components/role/v1/role.interface';
 import { Role } from '@components/role/v1/role.model';
 import { UserRoleStatus } from '@components/userRole/v1/userRole.interface';
+import { Player } from '@components/player/v1/player.model';
 import AppError from '@core/utils/appError';
 import httpStatus from 'http-status';
 import logger from '@core/utils/logger';
@@ -50,6 +51,32 @@ interface ITeamResponse {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface ITeamMember {
+  userRoleId: string;
+  userId: string;
+  name: string;
+  email: string;
+  avatar: string | null;
+  roleName: RoleName;
+  playerId?: string;
+  age?: number;
+  joinedAt?: Date;
+}
+
+const calculateAge = (dateOfBirth?: Date | string | null): number | undefined => {
+  if (!dateOfBirth) return undefined;
+  const dob = new Date(dateOfBirth);
+  if (Number.isNaN(dob.getTime())) return undefined;
+
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+    age -= 1;
+  }
+  return age >= 0 ? age : undefined;
+};
 
 /**
  * Create a new team
@@ -332,4 +359,75 @@ export const addTeamMember = async (
   });
 
   logger.info(`Member ${newMemberId} added to team ${teamId} by ${userId}`);
+};
+
+/**
+ * Get all active members of a team with role + profile + (optional) player info.
+ * Sourced from UserRole (the source of truth), so role updates flow through immediately.
+ */
+export const getTeamMembers = async (teamId: string): Promise<ITeamMember[]> => {
+  // Verify team exists (fast existence check; member-permission is enforced by middleware)
+  const team = await Team.findById(teamId).select('_id');
+  if (!team) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Team not found');
+  }
+
+  type PopulatedUser = {
+    _id: { toString: () => string };
+    name: string;
+    email: string;
+    avatar?: string | null;
+    dateOfBirth?: Date | null;
+  };
+
+  const userRoles = await UserRole.find({
+    teamId,
+    status: UserRoleStatus.ACTIVE,
+  })
+    .populate<{ userId: PopulatedUser }>('userId', 'name email avatar dateOfBirth')
+    .sort({ joinedAt: 1, createdAt: 1 });
+
+  if (userRoles.length === 0) return [];
+
+  // Batch lookup Player rows for these users on this team
+  const userObjectIds = userRoles
+    .map((ur) => ur.userId as unknown as PopulatedUser | null)
+    .filter((u): u is PopulatedUser => Boolean(u))
+    .map((u) => u._id);
+
+  const players =
+    userObjectIds.length > 0
+      ? await Player.find({ userId: { $in: userObjectIds }, teamId }).select(
+          '_id userId dateOfBirth'
+        )
+      : [];
+
+  const playerByUserId = new Map(
+    players.map((p) => [String(p.userId), p])
+  );
+
+  const members: ITeamMember[] = [];
+  for (const ur of userRoles) {
+    const user = ur.userId as unknown as PopulatedUser | null;
+    if (!user || !user._id) {
+      // UserRole references a missing user; skip rather than crash the response
+      continue;
+    }
+    const userIdStr = user._id.toString();
+    const player = playerByUserId.get(userIdStr);
+
+    members.push({
+      userRoleId: ur._id.toString(),
+      userId: userIdStr,
+      name: user.name,
+      email: user.email,
+      avatar: user.avatar ?? null,
+      roleName: ur.roleName,
+      playerId: player ? String(player._id) : undefined,
+      age: calculateAge(player?.dateOfBirth ?? user.dateOfBirth),
+      joinedAt: ur.joinedAt,
+    });
+  }
+
+  return members;
 };
