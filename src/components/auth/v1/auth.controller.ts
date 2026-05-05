@@ -6,15 +6,23 @@ import * as authService from './auth.service';
 import logger from '@core/utils/logger';
 
 export const signUp = asyncWrapper(async (req: Request, res: Response) => {
-  const { email, password, name, dateOfBirth } = req.body;
+  const { email, password, name, dateOfBirth, skipEmailVerification } = req.body;
 
-  const result = await authService.signUp({ email, password, name, dateOfBirth });
+  const result = await authService.signUp({
+    email,
+    password,
+    name,
+    dateOfBirth,
+    skipEmailVerification,
+  });
 
   logger.info(`User signed up successfully: ${email}`);
 
   res.status(httpStatus.CREATED).json({
     success: true,
-    message: 'User registered successfully. Please check your email to verify your account.',
+    message: skipEmailVerification
+      ? 'User registered successfully.'
+      : 'User registered successfully. Please check your email to verify your account.',
     data: result,
   });
 });

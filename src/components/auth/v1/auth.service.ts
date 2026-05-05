@@ -21,6 +21,7 @@ interface ISignUpInput {
   password: string;
   name: string;
   dateOfBirth?: Date | string;
+  skipEmailVerification?: boolean;
 }
 
 interface ISignUpResponse {
@@ -30,6 +31,7 @@ interface ISignUpResponse {
     email: string;
     email_verified: boolean;
     avatar?: string;
+    dateOfBirth?: Date | string;
   };
   token: string;
   verificationCode?: string; // For testing email verification
@@ -41,6 +43,7 @@ interface IAuthResponse {
     email: string;
     email_verified: boolean;
     avatar?: string;
+    dateOfBirth?: Date | string;
   };
   team?: {
     id: string;
@@ -66,7 +69,7 @@ const generateVerificationCode = (): string => {
 }
 
 export const signUp = async (input: ISignUpInput): Promise<ISignUpResponse> => {
-  const { email, password, name, dateOfBirth } = input;
+  const { email, password, name, dateOfBirth, skipEmailVerification = false } = input;
 
   // Check if user already exists
   const existingUser = await UserModel.findOne({ email });
@@ -82,33 +85,36 @@ export const signUp = async (input: ISignUpInput): Promise<ISignUpResponse> => {
     name,
     email,
     password: hashedPassword,
-    email_verified: false,
+    email_verified: skipEmailVerification,
     ...(dateOfBirth ? { dateOfBirth: new Date(dateOfBirth) } : {})
   });
 
   // No role assignment at signup - roles will be assigned after verification
   // via "create team" (COACH) or "join team" (PLAYER) actions
 
-  // Generate email verification code (4-6 digits)
-  const verificationCode = generateVerificationCode();
-  const expiresAt = new Date(Date.now() + TOKEN_EXPIRY.EMAIL_VERIFICATION);
+  let verificationCode: string | undefined;
+  if (!skipEmailVerification) {
+    // Generate email verification code (4-6 digits)
+    verificationCode = generateVerificationCode();
+    const expiresAt = new Date(Date.now() + TOKEN_EXPIRY.EMAIL_VERIFICATION);
 
-  await TokenModel.create({
-    user: user._id,
-    token: verificationCode,
-    type: TOKEN_TYPES.EMAIL_VERIFICATION,
-    expires_at: expiresAt,
-  });
-
-  // Send verification email
-  try {
-    await sendEmail('verifyEmail', email, {
-      name: user.name,
-      code: verificationCode,
+    await TokenModel.create({
+      user: user._id,
+      token: verificationCode,
+      type: TOKEN_TYPES.EMAIL_VERIFICATION,
+      expires_at: expiresAt,
     });
-  } catch (error) {
-    logger.error('Failed to send verification email', error);
-    // Don't fail signup if email fails
+
+    // Send verification email
+    try {
+      await sendEmail('verifyEmail', email, {
+        name: user.name,
+        code: verificationCode,
+      });
+    } catch (error) {
+      logger.error('Failed to send verification email', error);
+      // Don't fail signup if email fails
+    }
   }
 
   // Generate JWT
@@ -124,9 +130,10 @@ export const signUp = async (input: ISignUpInput): Promise<ISignUpResponse> => {
       email: user.email,
       email_verified: user.email_verified,
       avatar: user.avatar,
+      dateOfBirth: user.dateOfBirth,
     },
     token,
-    verificationCode: config.app.isDev ? verificationCode : undefined,
+    verificationCode: !skipEmailVerification && config.app.isDev ? verificationCode : undefined,
   };
 };
 
@@ -200,6 +207,7 @@ export const signIn = async (email: string, password: string): Promise<IAuthResp
       email: user.email,
       email_verified: user.email_verified,
       avatar: user.avatar,
+      dateOfBirth: user.dateOfBirth,
     },
     ...(sessionTeam ? { team: sessionTeam } : {}),
     token,
@@ -252,6 +260,7 @@ export const verifyEmail = async (code: string, email: string): Promise<IAuthRes
       email: updatedUser.email,
       email_verified: updatedUser.email_verified,
       avatar: updatedUser.avatar,
+      dateOfBirth: updatedUser.dateOfBirth,
     },
     token: jwtToken,
   };

@@ -449,6 +449,13 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid role selected');
   }
 
+  if (role === RoleName.COACH) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Coach role cannot be selected when accepting a team invite'
+    );
+  }
+
   if (invite.minorPlayerId && role !== RoleName.GUARDIAN) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
@@ -631,6 +638,13 @@ export const approvePendingInvite = async (data: IApprovePendingInviteInput): Pr
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid role selected');
   }
 
+  if (role === RoleName.COACH) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Coach role cannot be assigned through invite approval'
+    );
+  }
+
   if (invite.minorPlayerId && role !== RoleName.GUARDIAN) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
@@ -638,22 +652,6 @@ export const approvePendingInvite = async (data: IApprovePendingInviteInput): Pr
     );
   }
 
-  // Enforce one active coach per team.
-  if (role === RoleName.COACH) {
-    const existingCoach = await UserRole.findOne({
-      teamId: invite.teamId,
-      roleName: RoleName.COACH,
-      status: UserRoleStatus.ACTIVE,
-      userId: { $ne: invite.acceptedBy }
-    });
-
-    if (existingCoach) {
-      throw new AppError(
-        httpStatus.CONFLICT,
-        'This team already has a coach. Only one coach is allowed per team.'
-      );
-    }
-  }
 
   const existingActiveMembership = await UserRole.findOne({
     userId: invite.acceptedBy,

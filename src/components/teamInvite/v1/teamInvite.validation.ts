@@ -1,6 +1,9 @@
 import Joi from 'joi';
 import { ValidationSchema } from '@core/middlewares/validate.middleware';
 import { RoleName } from '@components/role/v1/role.interface';
+const INVITE_ACCEPT_ALLOWED_ROLES = Object.values(RoleName).filter(
+  (role) => role !== RoleName.COACH
+);
 
 const inviteEntrySchema = Joi.object({
   email: Joi.string().email().required().messages({
@@ -36,8 +39,8 @@ export const acceptInviteSchema: ValidationSchema = {
       'string.empty': 'Token is required',
       'string.length': 'Invalid token format'
     }),
-    role: Joi.string().valid(...Object.values(RoleName)).required().messages({
-      'any.only': `Role must be one of: ${Object.values(RoleName).join(', ')}`,
+    role: Joi.string().valid(...INVITE_ACCEPT_ALLOWED_ROLES).required().messages({
+      'any.only': `Role must be one of: ${INVITE_ACCEPT_ALLOWED_ROLES.join(', ')}`,
       'any.required': 'Role is required'
     }),
     dateOfBirth: Joi.date().iso().optional().messages({
@@ -80,8 +83,8 @@ export const approvePendingInviteSchema: ValidationSchema = {
     })
   }),
   body: Joi.object({
-    role: Joi.string().valid(...Object.values(RoleName)).required().messages({
-      'any.only': `Role must be one of: ${Object.values(RoleName).join(', ')}`,
+    role: Joi.string().valid(...INVITE_ACCEPT_ALLOWED_ROLES).required().messages({
+      'any.only': `Role must be one of: ${INVITE_ACCEPT_ALLOWED_ROLES.join(', ')}`,
       'any.required': 'Role is required'
     })
   })

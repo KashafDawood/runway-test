@@ -17,6 +17,7 @@ export const signUpValidation: ValidationSchema = {
     dateOfBirth: Joi.date().iso().optional().messages({
       'date.format': 'dateOfBirth must be an ISO date string',
     }),
+    skipEmailVerification: Joi.boolean().optional(),
     teamName: Joi.string().optional().trim().messages({
       'string.base': 'Team name must be a string',
     }),
