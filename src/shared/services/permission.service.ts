@@ -31,6 +31,20 @@ export class PermissionService {
     const isAdmin =
       userRole === RoleName.COACH || userRole === RoleName.ASSISTANT_COACH;
 
+    if (userRole === RoleName.GUARDIAN && resource !== Resource.GUARDIAN_LINK) {
+      const hasApprovedLink = await this.hasApprovedGuardianLinkInTeam(
+        userId,
+        teamId,
+      );
+      if (!hasApprovedLink) {
+        return {
+          allowed: false,
+          reason:
+            "Guardian must be linked to a player before performing team actions.",
+        };
+      }
+    }
+
     // Check permission based on resource and action
     switch (resource) {
       case Resource.TEAM:
@@ -96,6 +110,18 @@ export class PermissionService {
       status: GuardianLinkStatus.APPROVED,
     });
 
+    return !!link;
+  }
+
+  private async hasApprovedGuardianLinkInTeam(
+    guardianId: string,
+    teamId: string,
+  ): Promise<boolean> {
+    const link = await GuardianLink.findOne({
+      guardianId,
+      teamId,
+      status: GuardianLinkStatus.APPROVED,
+    }).select("_id");
     return !!link;
   }
 
@@ -230,7 +256,12 @@ export class PermissionService {
             playerId,
             teamId,
           );
-          return { allowed: isGuardian };
+          return {
+            allowed: isGuardian,
+            reason: !isGuardian
+              ? "Guardian is not linked to this player. Link guardian before viewing RSVP."
+              : undefined,
+          };
         }
         return { allowed: false };
 
@@ -257,7 +288,12 @@ export class PermissionService {
             playerId,
             teamId,
           );
-          return { allowed: isGuardian };
+          return {
+            allowed: isGuardian,
+            reason: !isGuardian
+              ? "Guardian is not linked to this player. Link guardian before updating RSVP."
+              : undefined,
+          };
         }
         return { allowed: false };
 

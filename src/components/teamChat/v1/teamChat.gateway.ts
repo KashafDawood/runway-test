@@ -89,6 +89,16 @@ export class TeamChatGateway {
           return next(new Error('User is not a member of this team'));
         }
 
+        const chatViewPerm = await permissionService.checkPermission({
+          userId: String(user._id),
+          teamId,
+          resource: Resource.CHAT,
+          action: Action.VIEW
+        });
+        if (!chatViewPerm.allowed) {
+          return next(new Error(chatViewPerm.reason || 'Not allowed to access team chat'));
+        }
+
         // Attach user info to socket
         socket.userId = String(user._id);
         socket.user = user;

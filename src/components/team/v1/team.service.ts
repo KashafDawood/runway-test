@@ -8,6 +8,8 @@ import AppError from '@core/utils/appError';
 import httpStatus from 'http-status';
 import logger from '@core/utils/logger';
 import { ITeam } from './team.interface';
+import { GuardianLink } from '@components/guardianLink/v1/guardianLink.model';
+import { GuardianLinkStatus } from '@components/guardianLink/v1/guardianLink.interface';
 
 interface ICreateTeamInput {
   name: string;
@@ -60,6 +62,9 @@ export interface ITeamMember {
   avatar: string | null;
   roleName: RoleName;
   playerId?: string;
+  isMinor?: boolean;
+  linkedGuardianCount?: number;
+  linkedPlayerNames?: string[];
   age?: number;
   joinedAt?: Date;
 }
@@ -398,12 +403,43 @@ export const getTeamMembers = async (teamId: string): Promise<ITeamMember[]> => 
   const players =
     userObjectIds.length > 0
       ? await Player.find({ userId: { $in: userObjectIds }, teamId }).select(
-          '_id userId dateOfBirth'
+          '_id userId dateOfBirth isMinor firstName lastName'
         )
       : [];
 
   const playerByUserId = new Map(
     players.map((p) => [String(p.userId), p])
+  );
+
+  const playerIds = players.map((player) => String(player._id));
+  const approvedLinks =
+    playerIds.length > 0
+      ? await GuardianLink.find({
+          teamId,
+          status: GuardianLinkStatus.APPROVED,
+          playerId: { $in: playerIds }
+        }).select('guardianId playerId')
+      : [];
+
+  const linkedGuardianCountByPlayerId = new Map<string, number>();
+  const linkedPlayerIdsByGuardianId = new Map<string, string[]>();
+  for (const link of approvedLinks) {
+    const playerId = String(link.playerId);
+    const guardianId = String(link.guardianId);
+    linkedGuardianCountByPlayerId.set(
+      playerId,
+      (linkedGuardianCountByPlayerId.get(playerId) ?? 0) + 1
+    );
+    const existingGuardianLinks = linkedPlayerIdsByGuardianId.get(guardianId) ?? [];
+    existingGuardianLinks.push(playerId);
+    linkedPlayerIdsByGuardianId.set(guardianId, existingGuardianLinks);
+  }
+
+  const playerNameById = new Map(
+    players.map((p) => [
+      String(p._id),
+      `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim() || 'Player'
+    ])
   );
 
   const members: ITeamMember[] = [];
@@ -424,6 +460,15 @@ export const getTeamMembers = async (teamId: string): Promise<ITeamMember[]> => 
       avatar: user.avatar ?? null,
       roleName: ur.roleName,
       playerId: player ? String(player._id) : undefined,
+      isMinor: player?.isMinor ?? undefined,
+      linkedGuardianCount: player
+        ? (linkedGuardianCountByPlayerId.get(String(player._id)) ?? 0)
+        : undefined,
+      linkedPlayerNames:
+        ur.roleName === RoleName.GUARDIAN
+          ? (linkedPlayerIdsByGuardianId.get(userIdStr) ?? [])
+              .map((id) => playerNameById.get(id) ?? 'Player')
+          : undefined,
       age: calculateAge(player?.dateOfBirth ?? user.dateOfBirth),
       joinedAt: ur.joinedAt,
     });

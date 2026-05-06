@@ -5,6 +5,10 @@ import { TeamMessage } from './teamChat.model';
 import { ITeamMessage, SystemMessageMeta, TeamMessageType } from './teamChat.interface';
 import { getTeamChatGateway } from './teamChat.gateway';
 import UserModel from '@components/user/v1/user.model';
+import { UserRole } from '@components/userRole/v1/userRole.model';
+import { GuardianLink } from '@components/guardianLink/v1/guardianLink.model';
+import { GuardianLinkStatus } from '@components/guardianLink/v1/guardianLink.interface';
+import { Player } from '@components/player/v1/player.model';
 
 /**
  * Throws if the message is a system message. Use in any PATCH/DELETE message handler
@@ -59,12 +63,41 @@ const normalizeMessage = async (message: ITeamMessage) => {
   let sender = null;
   if (json.senderId) {
     try {
-      const user = await UserModel.findById(json.senderId).select('name email');
+      const [user, membership] = await Promise.all([
+        UserModel.findById(json.senderId).select('name email'),
+        UserRole.findOne({
+          userId: json.senderId,
+          teamId: json.teamId,
+          status: 'active'
+        }).select('roleName')
+      ]);
       if (user) {
+        let guardianPlayers: { playerId: string; playerName: string }[] = [];
+        if (membership?.roleName === 'guardian') {
+          const links = await GuardianLink.find({
+            guardianId: json.senderId,
+            teamId: json.teamId,
+            status: GuardianLinkStatus.APPROVED
+          }).select('playerId');
+
+          const playerIds = links.map((link) => link.playerId);
+          if (playerIds.length > 0) {
+            const players = await Player.find({
+              _id: { $in: playerIds }
+            }).select('_id firstName lastName');
+            guardianPlayers = players.map((player) => ({
+              playerId: player._id.toString(),
+              playerName: `${player.firstName} ${player.lastName}`.trim()
+            }));
+          }
+        }
+
         sender = {
           _id: user._id.toString(),
           name: user.name,
-          email: user.email
+          email: user.email,
+          roleName: membership?.roleName,
+          guardianPlayers
         };
       }
     } catch (error) {

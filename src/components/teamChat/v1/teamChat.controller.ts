@@ -75,6 +75,19 @@ export const getMessages = asyncWrapper(async (req: Request, res: Response) => {
     throw new AppError(httpStatus.BAD_REQUEST, 'Team ID is required');
   }
 
+  const perm = await permissionService.checkPermission({
+    userId: String(userId),
+    teamId,
+    resource: Resource.CHAT,
+    action: Action.VIEW
+  });
+  if (!perm.allowed) {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      perm.reason ?? 'Not allowed to view chat messages'
+    );
+  }
+
   const parsedLimit = limit ? parseInt(limit, 10) : undefined;
   const beforeDate = before ? new Date(before) : undefined;
   const afterDate = after ? new Date(after) : undefined;
