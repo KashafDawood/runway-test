@@ -18,6 +18,7 @@ export interface ITeamInvite extends Document {
   email: string; // Email of invitee
   status: InviteStatus;
   token: string; // Unique secure token
+  inviteCode: string; // Unique short code for manual joins
   expiresAt: Date; // When invite expires
   acceptedRole?: RoleName; // Role chosen by user when accepting
   acceptedAt?: Date; // When accepted

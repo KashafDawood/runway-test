@@ -36,6 +36,16 @@ const teamInviteSchema = new Schema<ITeamInvite>(
       unique: true,
       index: true
     },
+    inviteCode: {
+      type: String,
+      required: [true, 'Invite code is required'],
+      unique: true,
+      uppercase: true,
+      trim: true,
+      minlength: 8,
+      maxlength: 8,
+      index: true
+    },
     expiresAt: {
       type: Date,
       required: [true, 'Expiration date is required'],
@@ -69,6 +79,7 @@ const teamInviteSchema = new Schema<ITeamInvite>(
 teamInviteSchema.index({ teamId: 1, status: 1 });
 teamInviteSchema.index({ email: 1, status: 1 });
 teamInviteSchema.index({ token: 1, status: 1 });
+teamInviteSchema.index({ inviteCode: 1, status: 1 });
 teamInviteSchema.index({ expiresAt: 1 }); // For cleanup jobs
 
 // Compound unique index: One pending invite per email per team

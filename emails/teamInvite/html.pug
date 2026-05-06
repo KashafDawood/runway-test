@@ -3,10 +3,13 @@ extends ../baseEmail
 block content
   p Hi there,
   
-  p #{inviterName} has invited you to join the team <strong>#{teamName}</strong> on Runway as a <strong>#{role}</strong>.
+  p #{inviterName} has invited you to join the team <strong>#{teamName}</strong> on Runway.
   
   .button-container
     a(href=inviteUrl class="button") Accept Invite
+
+  p You can also join from the app using this invite code:
+  p(style="font-size:24px;font-weight:700;letter-spacing:0.2em;font-family:monospace;text-align:center;margin:8px 0 16px;") #{inviteCode}
   
   p Or copy and paste this link into your browser:
   p.small #{inviteUrl}

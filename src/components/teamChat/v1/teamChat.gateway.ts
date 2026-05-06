@@ -37,6 +37,7 @@ export const getTeamChatGateway = (): TeamChatGateway | null => {
  */
 export class TeamChatGateway {
   private io: SocketIOServer;
+  private sessionNamespace;
 
   constructor(httpServer: HTTPServer) {
     // Set singleton instance
@@ -49,6 +50,7 @@ export class TeamChatGateway {
       },
       path: '/socket.io'
     });
+    this.sessionNamespace = this.io.of('/session');
 
     this.setupMiddleware();
     this.setupEventHandlers();
@@ -108,6 +110,29 @@ export class TeamChatGateway {
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.error('Socket.IO authentication error:', error);
+        next(new Error(errorMessage || 'Authentication failed'));
+      }
+    });
+
+    this.sessionNamespace.use(async (socket: AuthenticatedSocket, next) => {
+      try {
+        const { token } = socket.handshake.auth as { token?: string };
+        if (!token) {
+          return next(new Error('Authentication token required'));
+        }
+
+        const decoded = await verifyAccessToken(token);
+        const user = await UserModel.findById(decoded._id);
+        if (!user) {
+          return next(new Error('User not found'));
+        }
+
+        socket.userId = String(user._id);
+        socket.user = user;
+        next();
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error('Session namespace auth error:', error);
         next(new Error(errorMessage || 'Authentication failed'));
       }
     });
@@ -183,6 +208,27 @@ export class TeamChatGateway {
         message: 'Successfully connected to team chat'
       });
     });
+
+    this.sessionNamespace.on('connection', (socket: AuthenticatedSocket) => {
+      const userId = socket.userId;
+      if (!userId) {
+        socket.disconnect();
+        return;
+      }
+
+      const roomName = `user:${userId}`;
+      socket.join(roomName);
+      logger.info(`User ${userId} joined session room: ${roomName}`);
+
+      socket.emit('connected', {
+        userId,
+        message: 'Successfully connected to session updates'
+      });
+
+      socket.on('disconnect', () => {
+        logger.info(`User ${userId} left session room: ${roomName}`);
+      });
+    });
   }
 
   /**
@@ -219,5 +265,11 @@ export class TeamChatGateway {
    */
   public getIO(): SocketIOServer {
     return this.io;
+  }
+
+  public emitMembershipApproved(userId: string, payload: Record<string, unknown>) {
+    const roomName = `user:${userId}`;
+    this.sessionNamespace.to(roomName).emit('membership:approved', payload);
+    logger.info(`Broadcasted membership approval to session room: ${roomName}`);
   }
 }

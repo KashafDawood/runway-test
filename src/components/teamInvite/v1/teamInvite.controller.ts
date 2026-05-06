@@ -37,13 +37,19 @@ export const createBatchInvites = asyncWrapper(async (req: Request, res: Respons
  * PUBLIC - no auth required
  */
 export const checkInvite = asyncWrapper(async (req: Request, res: Response) => {
-  const { token } = req.query;
+  const { token, inviteCode } = req.query;
 
-  if (!token || typeof token !== 'string') {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Token is required');
+  const inviteToken = typeof token === 'string' ? token : undefined;
+  const normalizedInviteCode = typeof inviteCode === 'string' ? inviteCode : undefined;
+
+  if (!inviteToken && !normalizedInviteCode) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Token or invite code is required');
   }
 
-  const result = await teamInviteService.checkInvite({ token });
+  const result = await teamInviteService.checkInvite({
+    ...(inviteToken ? { token: inviteToken } : {}),
+    ...(normalizedInviteCode ? { inviteCode: normalizedInviteCode } : {})
+  });
 
   res.status(httpStatus.OK).json({
     success: true,
@@ -58,14 +64,15 @@ export const checkInvite = asyncWrapper(async (req: Request, res: Response) => {
  */
 export const acceptInvite = asyncWrapper(async (req: Request, res: Response) => {
   const userId = req.user?._id;
-  const { token, role, dateOfBirth } = req.body;
+  const { token, inviteCode, role, dateOfBirth } = req.body;
 
   if (!userId) {
     throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
   }
 
   const result = await teamInviteService.acceptInvite({
-    token,
+    ...(token ? { token } : {}),
+    ...(inviteCode ? { inviteCode } : {}),
     role,
     userId,
     dateOfBirth,

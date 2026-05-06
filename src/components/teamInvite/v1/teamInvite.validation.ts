@@ -26,18 +26,26 @@ export const createBatchInviteSchema: ValidationSchema = {
 
 export const checkInviteSchema: ValidationSchema = {
   query: Joi.object({
-    token: Joi.string().required().length(64).messages({
-      'string.empty': 'Token is required',
+    token: Joi.string().length(64).optional().messages({
       'string.length': 'Invalid token format'
+    }),
+    inviteCode: Joi.string().trim().uppercase().alphanum().length(8).optional().messages({
+      'string.length': 'Invite code must be 8 characters',
+      'string.alphanum': 'Invite code must be alphanumeric'
     })
+  }).or('token', 'inviteCode').messages({
+    'object.missing': 'Token or invite code is required'
   })
 };
 
 export const acceptInviteSchema: ValidationSchema = {
   body: Joi.object({
-    token: Joi.string().required().length(64).messages({
-      'string.empty': 'Token is required',
+    token: Joi.string().length(64).optional().messages({
       'string.length': 'Invalid token format'
+    }),
+    inviteCode: Joi.string().trim().uppercase().alphanum().length(8).optional().messages({
+      'string.length': 'Invite code must be 8 characters',
+      'string.alphanum': 'Invite code must be alphanumeric'
     }),
     role: Joi.string().valid(...INVITE_ACCEPT_ALLOWED_ROLES).required().messages({
       'any.only': `Role must be one of: ${INVITE_ACCEPT_ALLOWED_ROLES.join(', ')}`,
@@ -46,6 +54,8 @@ export const acceptInviteSchema: ValidationSchema = {
     dateOfBirth: Joi.date().iso().optional().messages({
       'date.format': 'dateOfBirth must be an ISO date string'
     })
+  }).or('token', 'inviteCode').messages({
+    'object.missing': 'Token or invite code is required'
   })
 };
 

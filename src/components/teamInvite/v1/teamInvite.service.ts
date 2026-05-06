@@ -19,6 +19,7 @@ import httpStatus from 'http-status';
 import logger from '@core/utils/logger';
 import config from '@config/config';
 import { INVITE_EXPIRY_MS, INVITE_ERRORS } from './teamInvite.constants';
+import { getTeamChatGateway } from '@components/teamChat/v1/teamChat.gateway';
 
 export interface IInviteEntry {
   email: string;
@@ -35,11 +36,13 @@ interface ICreateBatchInviteInput {
 }
 
 interface ICheckInviteInput {
-  token: string;
+  token?: string;
+  inviteCode?: string;
 }
 
 interface IAcceptInviteInput {
-  token: string;
+  token?: string;
+  inviteCode?: string;
   role: RoleName; // User chooses role
   userId: string; // Required - user must exist and be authenticated
   /** Required for player role if the user has no dateOfBirth yet (ISO date) */
@@ -60,6 +63,10 @@ interface IBatchInviteResult {
   }>;
 }
 
+const INVITE_CODE_LENGTH = 8;
+const INVITE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const MAX_CREDENTIAL_GENERATION_ATTEMPTS = 5;
+
 const asIdString = (value: unknown): string => {
   if (!value) return '';
   if (typeof value === 'string') return value;
@@ -70,6 +77,47 @@ const asIdString = (value: unknown): string => {
     if (nested instanceof Types.ObjectId) return nested.toString();
   }
   return String(value);
+};
+
+const generateInviteToken = (): string => crypto.randomBytes(32).toString('hex');
+
+const generateInviteCode = (): string => {
+  let code = '';
+  for (let i = 0; i < INVITE_CODE_LENGTH; i += 1) {
+    const randomIndex = crypto.randomInt(0, INVITE_CODE_ALPHABET.length);
+    code += INVITE_CODE_ALPHABET[randomIndex];
+  }
+  return code;
+};
+
+const generateUniqueInviteCredentials = async (): Promise<{ token: string; inviteCode: string }> => {
+  for (let attempt = 0; attempt < MAX_CREDENTIAL_GENERATION_ATTEMPTS; attempt += 1) {
+    const token = generateInviteToken();
+    const inviteCode = generateInviteCode();
+    const existingInvite = await TeamInvite.exists({
+      $or: [{ token }, { inviteCode }]
+    });
+    if (!existingInvite) {
+      return { token, inviteCode };
+    }
+  }
+
+  throw new AppError(
+    httpStatus.INTERNAL_SERVER_ERROR,
+    'Unable to generate unique invite credentials. Please try again.'
+  );
+};
+
+const findInviteByCredential = async (data: ICheckInviteInput): Promise<ITeamInvite | null> => {
+  const token = data.token?.trim();
+  const inviteCode = data.inviteCode?.trim().toUpperCase();
+
+  if (!token && !inviteCode) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Token or invite code is required');
+  }
+
+  const filter = token ? { token } : { inviteCode };
+  return TeamInvite.findOne(filter).populate('teamId', 'name sport season').populate('invitedBy', 'name email');
 };
 
 type InviteRecipientSummary = {
@@ -241,6 +289,7 @@ export const createBatchInvites = async (
     email: string;
     status: InviteStatus;
     token: string;
+    inviteCode: string;
     expiresAt: Date;
     minorPlayerId?: mongoose.Types.ObjectId;
   }> = [];
@@ -281,8 +330,7 @@ export const createBatchInvites = async (
         continue;
       }
 
-      // Generate secure random token
-      const token = crypto.randomBytes(32).toString('hex');
+      const { token, inviteCode } = await generateUniqueInviteCredentials();
       const expiresAt = new Date(Date.now() + INVITE_EXPIRY_MS);
 
       // Add to batch creation array
@@ -292,6 +340,7 @@ export const createBatchInvites = async (
         email,
         status: InviteStatus.PENDING,
         token,
+        inviteCode,
         expiresAt,
         ...(minorPlayerId
           ? { minorPlayerId: new mongoose.Types.ObjectId(minorPlayerId) }
@@ -307,6 +356,7 @@ export const createBatchInvites = async (
           teamName: team.name,
           inviterName: inviter.name,
           inviteUrl,
+          inviteCode,
           expiresInDays: Math.floor(INVITE_EXPIRY_MS / (24 * 60 * 60 * 1000))
         }
       });
@@ -364,12 +414,7 @@ export const checkInvite = async (data: ICheckInviteInput): Promise<{
   requiresRegistration: boolean;
   userExists: boolean;
 }> => {
-  const { token } = data;
-
-  // Find invite by token
-  const invite = await TeamInvite.findOne({ token })
-    .populate('teamId', 'name sport season')
-    .populate('invitedBy', 'name email');
+  const invite = await findInviteByCredential(data);
 
   if (!invite) {
     throw new AppError(httpStatus.NOT_FOUND, INVITE_ERRORS.NOT_FOUND);
@@ -414,12 +459,11 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     avatar?: string;
   };
 }> => {
-  const { token, role, userId, dateOfBirth: inputDob } = data;
-
-  // Find invite by token
-  const invite = await TeamInvite.findOne({ token })
-    .populate('teamId', 'name sport season')
-    .populate('invitedBy', 'name email');
+  const { role, userId, dateOfBirth: inputDob } = data;
+  const invite = await findInviteByCredential({
+    token: data.token,
+    inviteCode: data.inviteCode
+  });
 
   if (!invite) {
     throw new AppError(httpStatus.NOT_FOUND, INVITE_ERRORS.NOT_FOUND);
@@ -756,6 +800,15 @@ export const approvePendingInvite = async (data: IApprovePendingInviteInput): Pr
     `Pending invite approved: ${invite._id} by coach ${approvedBy} with role ${role}`
   );
 
+  const gateway = getTeamChatGateway();
+  if (gateway) {
+    gateway.emitMembershipApproved(asIdString(invite.acceptedBy), {
+      inviteId: invite._id.toString(),
+      teamId: asIdString(invite.teamId),
+      role
+    });
+  }
+
   return {
     invite,
     userRole: {
@@ -951,9 +1004,11 @@ export const resendInvite = async (
     throw new AppError(httpStatus.BAD_REQUEST, 'Can only resend pending invites');
   }
 
-  if (invite.expiresAt < new Date()) {
-    throw new AppError(httpStatus.GONE, 'Invite has expired');
-  }
+  const { token, inviteCode } = await generateUniqueInviteCredentials();
+  invite.token = token;
+  invite.inviteCode = inviteCode;
+  invite.expiresAt = new Date(Date.now() + INVITE_EXPIRY_MS);
+  await invite.save();
 
   const inviteUrl = `${config.app.frontEndUrl}/team/invite/accept?token=${invite.token}`;
 
@@ -961,6 +1016,7 @@ export const resendInvite = async (
     teamName: (invite.teamId as unknown as { name: string }).name,
     inviterName: (invite.invitedBy as unknown as { name: string }).name,
     inviteUrl,
+    inviteCode: invite.inviteCode,
     expiresInDays: Math.floor((invite.expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
   });
 
