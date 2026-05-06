@@ -411,7 +411,10 @@ export const putRsvp = asyncWrapper(async (req: RequestWithContext, res: Respons
       }));
   } else {
     if (!body.playerId || String(body.playerId).trim() === '') {
-      throw new AppError(httpStatus.BAD_REQUEST, 'playerId is required for guardians');
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Guardian must select a linked player before updating RSVP'
+      );
     }
     playerId = body.playerId.trim();
   }
@@ -425,6 +428,13 @@ export const putRsvp = asyncWrapper(async (req: RequestWithContext, res: Respons
     targetUserId: userTeamRole === RoleName.PLAYER ? String(userId) : undefined
   });
   if (!perm.allowed) {
+    if (userTeamRole === RoleName.GUARDIAN) {
+      throw new AppError(
+        httpStatus.FORBIDDEN,
+        perm.reason ??
+          'Guardian is not linked to the selected player. Link guardian before RSVP.'
+      );
+    }
     throw new AppError(httpStatus.FORBIDDEN, perm.reason ?? 'Not allowed to set RSVP for this player');
   }
 
