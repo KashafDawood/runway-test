@@ -2,7 +2,11 @@ import { CorsOptions } from 'cors';
 import config from '@config/config';
 
 const originRegex = config.app.originRegex ? new RegExp(config.app.originRegex) : null;
-const allowedOrigins = config.app.allowedOrigins.split(',');
+const normalizeOrigin = (value?: string | null): string => (value || '').trim().replace(/\/$/, '');
+const allowedOrigins = config.app.allowedOrigins
+  .split(',')
+  .map((origin) => normalizeOrigin(origin))
+  .filter(Boolean);
 
 export const corsOption: CorsOptions = {
   credentials: true,
@@ -12,7 +16,9 @@ export const corsOption: CorsOptions = {
       callback(null, true);
       return;
     }
-    if (allowedOrigins.indexOf(origin) !== -1 || (originRegex && originRegex.test(origin))) {
+
+    const normalizedOrigin = normalizeOrigin(origin);
+    if (allowedOrigins.includes(normalizedOrigin) || (originRegex && originRegex.test(normalizedOrigin))) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));

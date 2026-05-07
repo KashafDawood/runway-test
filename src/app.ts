@@ -12,7 +12,11 @@ import config from '@config/config';
 import { corsOption } from '@core/utils/misc';
 import uniqueReqId from '@core/middlewares/uniqueReqId.middleware';
 
-const allowedOrigins = config.app.allowedOrigins.split(',');
+const normalizeOrigin = (value?: string | null): string => (value || '').trim().replace(/\/$/, '');
+const allowedOrigins = config.app.allowedOrigins
+  .split(',')
+  .map((origin) => normalizeOrigin(origin))
+  .filter(Boolean);
 
 const { isProd } = config.app;
 const app: Application = express();
@@ -23,8 +27,9 @@ app.use(
     setHeaders: function (res) {
       const origin = res.req.headers.origin;
 
-      if (allowedOrigins.includes(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
+      const normalizedOrigin = normalizeOrigin(origin);
+      if (allowedOrigins.includes(normalizedOrigin)) {
+        res.setHeader('Access-Control-Allow-Origin', normalizedOrigin);
       }
     },
   }),
