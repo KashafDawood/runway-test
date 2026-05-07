@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: runway-hemero-be
+    env: node
+    plan: free
+    buildCommand: yarn install --frozen-lockfile && yarn build
+    startCommand: yarn start
