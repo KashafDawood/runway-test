@@ -17,6 +17,7 @@ const allowedOrigins = config.app.allowedOrigins
   .split(',')
   .map((origin) => normalizeOrigin(origin))
   .filter(Boolean);
+const localhostSchemeRegex = /^(https?|capacitor|ionic):\/\/localhost(?::\d+)?$/i;
 
 const { isProd } = config.app;
 const app: Application = express();
@@ -28,7 +29,8 @@ app.use(
       const origin = res.req.headers.origin;
 
       const normalizedOrigin = normalizeOrigin(origin);
-      if (allowedOrigins.includes(normalizedOrigin)) {
+      const isAllowedOrigin = allowedOrigins.includes(normalizedOrigin) || localhostSchemeRegex.test(normalizedOrigin);
+      if (isAllowedOrigin) {
         res.setHeader('Access-Control-Allow-Origin', normalizedOrigin);
       }
     },

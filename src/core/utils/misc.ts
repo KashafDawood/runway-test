@@ -7,6 +7,7 @@ const allowedOrigins = config.app.allowedOrigins
   .split(',')
   .map((origin) => normalizeOrigin(origin))
   .filter(Boolean);
+const localhostSchemeRegex = /^(https?|capacitor|ionic):\/\/localhost(?::\d+)?$/i;
 
 export const corsOption: CorsOptions = {
   credentials: true,
@@ -18,10 +19,14 @@ export const corsOption: CorsOptions = {
     }
 
     const normalizedOrigin = normalizeOrigin(origin);
-    if (allowedOrigins.includes(normalizedOrigin) || (originRegex && originRegex.test(normalizedOrigin))) {
+    const isEnvAllowed =
+      allowedOrigins.includes(normalizedOrigin) || (originRegex && originRegex.test(normalizedOrigin));
+    const isMobileLocalhostOrigin = localhostSchemeRegex.test(normalizedOrigin);
+
+    if (isEnvAllowed || isMobileLocalhostOrigin) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(new Error(`Not allowed by CORS: ${normalizedOrigin}`));
     }
   },
 };
