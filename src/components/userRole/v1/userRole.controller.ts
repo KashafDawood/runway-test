@@ -3,6 +3,9 @@ import httpStatus from 'http-status';
 import asyncWrapper from '@core/utils/asyncWrapper';
 import AppError from '@core/utils/appError';
 import * as userRoleService from './userRole.service';
+import { notifyRoleChanged } from '@components/notification/v1/notificationDelivery.service';
+import { Team } from '@components/team/v1/team.model';
+import logger from '@core/utils/logger';
 
 /**
  * PUT /api/v1/teams/:teamId/members/:userId/role
@@ -45,6 +48,20 @@ export const updateRole = asyncWrapper(
       newRoleName: role,
       updatedBy: userId.toString(),
     });
+
+    try {
+      const team = await Team.findById(teamId).select('name').lean();
+      if (team?.name) {
+        await notifyRoleChanged({
+          userId: targetUserId,
+          teamId,
+          teamName: team.name,
+          newRole: result.newRole,
+        });
+      }
+    } catch (err) {
+      logger.error('Failed to send role-changed notification', err);
+    }
 
     res.status(httpStatus.OK).json({
       success: true,

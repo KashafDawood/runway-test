@@ -20,6 +20,10 @@ import logger from '@core/utils/logger';
 import config from '@config/config';
 import { INVITE_EXPIRY_MS, INVITE_ERRORS } from './teamInvite.constants';
 import { getTeamChatGateway } from '@components/teamChat/v1/teamChat.gateway';
+import {
+  notifyInviteReceived,
+  notifyInviteApprovedOrRejected,
+} from '@components/notification/v1/notificationDelivery.service';
 
 export interface IInviteEntry {
   email: string;
@@ -391,6 +395,28 @@ export const createBatchInvites = async (
           logger.error('Unexpected error sending invite emails', err);
         });
       }
+
+      // Notify existing users via push (non-blocking)
+      Promise.allSettled(
+        createdInvites.map(async (inv) => {
+          try {
+            const invUser = existingUserMap.get(inv.email.toLowerCase());
+            if (invUser) {
+              await notifyInviteReceived({
+                invitedUserId: invUser._id.toString(),
+                teamId,
+                teamName: team.name,
+                inviteId: inv._id.toString(),
+                inviteToken: inv.token,
+              });
+            }
+          } catch (err) {
+            logger.error(`Failed to send invite push notification for ${inv.email}`, err);
+          }
+        })
+      ).catch((err) => {
+        logger.error('Unexpected error sending invite push notifications', err);
+      });
 
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -808,6 +834,16 @@ export const approvePendingInvite = async (data: IApprovePendingInviteInput): Pr
       role
     });
   }
+
+  notifyInviteApprovedOrRejected({
+    requesterUserId: asIdString(invite.acceptedBy),
+    teamId: asIdString(invite.teamId),
+    teamName: (invite.teamId as unknown as { name: string }).name ?? 'your team',
+    inviteId: invite._id.toString(),
+    approved: true,
+  }).catch((err) => {
+    logger.error('Failed to send invite-approved notification', err);
+  });
 
   return {
     invite,
