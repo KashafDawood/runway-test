@@ -28,4 +28,15 @@ router.post(
   notificationController.unregisterToken
 );
 
+/**
+ * Test send a notification to the authenticated user's registered devices
+ * POST /api/v1/notifications/test-send
+ * Requires authentication; sends a test notification to all tokens for the current user
+ */
+router.post(
+  '/test-send',
+  verifyToken,
+  notificationController.testSend
+);
+
 export default router;

@@ -36,3 +36,26 @@ export const unregisterToken = asyncWrapper(async (req: Request, res: Response) 
     message: 'Device token unregistered',
   });
 });
+
+/**
+ * POST /api/v1/notifications/test-send
+ * Send a test notification to all devices of the authenticated user.
+ * Useful for verifying Firebase credentials and token validity.
+ */
+export const testSend = asyncWrapper(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'Authentication required');
+  }
+
+  const result = await notificationService.sendToUser(userId.toString(), {
+    title: '🚀 Test Notification',
+    body: 'This is a test push notification from Runway. If you see this, push notifications are working!',
+  });
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    message: 'Test notification sent',
+    result,
+  });
+});
