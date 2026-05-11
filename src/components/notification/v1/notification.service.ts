@@ -1,7 +1,9 @@
+import { Types } from 'mongoose';
 import DeviceTokenModel from './deviceToken.model';
+import NotificationLogModel from './notificationLog.model';
 import { getMessaging } from '@shared/services/firebase';
 import { NotificationPlatform } from './notification.interface';
-import type { INotificationPayload } from './notification.interface';
+import type { INotificationPayload, INotificationLogDoc } from './notification.interface';
 import logger from '@core/utils/logger';
 
 /**
@@ -83,6 +85,9 @@ export async function sendToTopic(
     return false;
   }
 
+  const topicData: Record<string, string> = payload.data ? stringifyData(payload.data) : {};
+  if (payload.clickUrl) topicData.url = payload.clickUrl;
+
   const message: import('firebase-admin/messaging').Message = {
     topic,
     notification: {
@@ -90,7 +95,10 @@ export async function sendToTopic(
       body: payload.body || '',
       imageUrl: payload.imageUrl,
     },
-    data: payload.data ? stringifyData(payload.data) : undefined,
+    data: Object.keys(topicData).length > 0 ? topicData : undefined,
+    webpush: payload.clickUrl
+      ? { fcmOptions: { link: payload.clickUrl } }
+      : undefined,
   };
 
   try {
@@ -116,6 +124,11 @@ async function sendToTokens(
     return { success: 0, failure: tokens.length };
   }
 
+  const data: Record<string, string> = payload.data ? stringifyData(payload.data) : {};
+  if (payload.clickUrl) {
+    data.url = payload.clickUrl;
+  }
+
   const message: import('firebase-admin/messaging').MulticastMessage = {
     tokens,
     notification: {
@@ -123,7 +136,10 @@ async function sendToTokens(
       body: payload.body || '',
       imageUrl: payload.imageUrl,
     },
-    data: payload.data ? stringifyData(payload.data) : undefined,
+    data: Object.keys(data).length > 0 ? data : undefined,
+    webpush: payload.clickUrl
+      ? { fcmOptions: { link: payload.clickUrl } }
+      : undefined,
   };
 
   try {
@@ -160,4 +176,72 @@ function stringifyData(data: Record<string, string>): Record<string, string> {
     out[k] = typeof v === 'string' ? v : JSON.stringify(v);
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Inbox service methods
+// ---------------------------------------------------------------------------
+
+export interface ListNotificationsOptions {
+  page?: number;
+  limit?: number;
+  unreadOnly?: boolean;
+  type?: string;
+}
+
+export interface NotificationListResult {
+  items: INotificationLogDoc[];
+  total: number;
+  unreadCount: number;
+  page: number;
+  limit: number;
+}
+
+export async function listNotifications(
+  userId: string,
+  options: ListNotificationsOptions = {}
+): Promise<NotificationListResult> {
+  const page = Math.max(1, options.page ?? 1);
+  const limit = Math.min(50, Math.max(1, options.limit ?? 20));
+  const skip = (page - 1) * limit;
+
+  const filter: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
+  if (options.unreadOnly) filter.readAt = null;
+  if (options.type) filter.type = options.type;
+
+  const [items, total, unreadCount] = await Promise.all([
+    NotificationLogModel.find(filter).sort({ sentAt: -1 }).skip(skip).limit(limit).lean(),
+    NotificationLogModel.countDocuments(filter),
+    NotificationLogModel.countDocuments({ userId: new Types.ObjectId(userId), readAt: null }),
+  ]);
+
+  return { items: items as unknown as INotificationLogDoc[], total, unreadCount, page, limit };
+}
+
+export async function getUnreadCount(userId: string): Promise<number> {
+  return NotificationLogModel.countDocuments({
+    userId: new Types.ObjectId(userId),
+    readAt: null,
+  });
+}
+
+export async function markNotificationRead(notificationId: string, userId: string): Promise<void> {
+  await NotificationLogModel.updateOne(
+    { _id: new Types.ObjectId(notificationId), userId: new Types.ObjectId(userId) },
+    { $set: { readAt: new Date() } }
+  );
+}
+
+export async function markAllNotificationsRead(userId: string): Promise<void> {
+  await NotificationLogModel.updateMany(
+    { userId: new Types.ObjectId(userId), readAt: null },
+    { $set: { readAt: new Date() } }
+  );
+}
+
+export async function deleteNotification(notificationId: string, userId: string): Promise<void> {
+  await NotificationLogModel.deleteOne({
+    _id: new Types.ObjectId(notificationId),
+    userId: new Types.ObjectId(userId),
+  });
 }

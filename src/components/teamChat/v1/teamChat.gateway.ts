@@ -272,4 +272,88 @@ export class TeamChatGateway {
     this.sessionNamespace.to(roomName).emit('membership:approved', payload);
     logger.info(`Broadcasted membership approval to session room: ${roomName}`);
   }
+
+  /**
+   * Emit event created notification to all team members via session namespace
+   */
+  public async emitEventCreated(teamId: string, payload: Record<string, unknown>, excludeUserId?: string) {
+    const { UserRole } = await import('@components/userRole/v1/userRole.model');
+    const { UserRoleStatus } = await import('@components/userRole/v1/userRole.interface');
+
+    const query: Record<string, unknown> = {
+      teamId: new (await import('mongoose')).Types.ObjectId(teamId),
+      status: UserRoleStatus.ACTIVE,
+    };
+    if (excludeUserId) {
+      query.userId = { $ne: new (await import('mongoose')).Types.ObjectId(excludeUserId) };
+    }
+
+    const roles = await UserRole.find(query).select('userId').lean();
+
+    for (const role of roles) {
+      const userId = role.userId.toString();
+      const roomName = `user:${userId}`;
+      this.sessionNamespace.to(roomName).emit('event:created', payload);
+    }
+    logger.info(`Broadcasted event created to ${roles.length} users via session namespace`);
+  }
+
+  /**
+   * Emit event updated notification to all team members via session namespace
+   */
+  public async emitEventUpdated(teamId: string, payload: Record<string, unknown>, excludeUserId?: string) {
+    const { UserRole } = await import('@components/userRole/v1/userRole.model');
+    const { UserRoleStatus } = await import('@components/userRole/v1/userRole.interface');
+
+    const query: Record<string, unknown> = {
+      teamId: new (await import('mongoose')).Types.ObjectId(teamId),
+      status: UserRoleStatus.ACTIVE,
+    };
+    if (excludeUserId) {
+      query.userId = { $ne: new (await import('mongoose')).Types.ObjectId(excludeUserId) };
+    }
+
+    const roles = await UserRole.find(query).select('userId').lean();
+
+    for (const role of roles) {
+      const userId = role.userId.toString();
+      const roomName = `user:${userId}`;
+      this.sessionNamespace.to(roomName).emit('event:updated', payload);
+    }
+    logger.info(`Broadcasted event updated to ${roles.length} users via session namespace`);
+  }
+
+  /**
+   * Emit event deleted notification to all team members via session namespace
+   */
+  public async emitEventDeleted(teamId: string, payload: Record<string, unknown>, excludeUserId?: string) {
+    const { UserRole } = await import('@components/userRole/v1/userRole.model');
+    const { UserRoleStatus } = await import('@components/userRole/v1/userRole.interface');
+
+    const query: Record<string, unknown> = {
+      teamId: new (await import('mongoose')).Types.ObjectId(teamId),
+      status: UserRoleStatus.ACTIVE,
+    };
+    if (excludeUserId) {
+      query.userId = { $ne: new (await import('mongoose')).Types.ObjectId(excludeUserId) };
+    }
+
+    const roles = await UserRole.find(query).select('userId').lean();
+
+    for (const role of roles) {
+      const userId = role.userId.toString();
+      const roomName = `user:${userId}`;
+      this.sessionNamespace.to(roomName).emit('event:deleted', payload);
+    }
+    logger.info(`Broadcasted event deleted to ${roles.length} users via session namespace`);
+  }
+
+  /**
+   * Emit event reminder notification to specific users
+   */
+  public emitEventReminder(userId: string, payload: Record<string, unknown>) {
+    const roomName = `user:${userId}`;
+    this.sessionNamespace.to(roomName).emit('event:reminder', payload);
+    logger.info(`Broadcasted event reminder to user room: ${roomName}`);
+  }
 }

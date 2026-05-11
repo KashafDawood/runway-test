@@ -1,6 +1,13 @@
 import mongoose, { Schema } from 'mongoose';
-import { INotificationLogDoc } from './notification.interface';
-import { NotificationType } from './notification.interface';
+import { INotificationLogDoc, NotificationType } from './notification.interface';
+
+const channelResultSchema = new Schema(
+  {
+    attempted: { type: Boolean, default: false },
+    success: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
 
 const notificationLogSchema = new Schema<INotificationLogDoc>(
   {
@@ -29,17 +36,24 @@ const notificationLogSchema = new Schema<INotificationLogDoc>(
       type: Schema.Types.Mixed,
       default: undefined,
     },
-    channel: {
+    url: {
       type: String,
-      enum: ['push', 'email'],
       required: true,
-      index: true,
+      trim: true,
+    },
+    channels: {
+      push: { type: channelResultSchema, default: () => ({ attempted: false, success: false }) },
+      email: { type: channelResultSchema, default: () => ({ attempted: false, success: false }) },
     },
     sentAt: {
       type: Date,
       required: true,
       default: Date.now,
       index: true,
+    },
+    readAt: {
+      type: Date,
+      default: null,
     },
     eventId: {
       type: Schema.Types.ObjectId,
@@ -53,6 +67,15 @@ const notificationLogSchema = new Schema<INotificationLogDoc>(
       default: null,
       index: true,
     },
+    inviteId: {
+      type: Schema.Types.ObjectId,
+      ref: 'TeamInvite',
+      default: null,
+    },
+    guardianLinkId: {
+      type: Schema.Types.ObjectId,
+      default: null,
+    },
   },
   {
     timestamps: false,
@@ -60,6 +83,8 @@ const notificationLogSchema = new Schema<INotificationLogDoc>(
   }
 );
 
+notificationLogSchema.index({ userId: 1, sentAt: -1 });
+notificationLogSchema.index({ userId: 1, readAt: 1, sentAt: -1 });
 notificationLogSchema.index({ userId: 1, type: 1, sentAt: -1 });
 notificationLogSchema.index({ eventId: 1, userId: 1, type: 1 });
 

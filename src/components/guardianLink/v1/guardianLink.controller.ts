@@ -4,6 +4,8 @@ import asyncWrapper from '@core/utils/asyncWrapper';
 import AppError from '@core/utils/appError';
 import { RequestWithContext } from 'types/request';
 import * as guardianLinkService from './guardianLink.service';
+import { notifyGuardianLink } from '@components/notification/v1/notificationDelivery.service';
+import logger from '@core/utils/logger';
 
 /**
  * POST /api/v1/teams/:teamId/guardian-links
@@ -31,6 +33,17 @@ export const requestGuardianLink = asyncWrapper(
       guardianId: body.guardianId ? String(body.guardianId).trim() : undefined,
       playerId: body.playerId ? String(body.playerId).trim() : undefined
     });
+
+    // Notify the other party (guardian or player) about the link request
+    const recipientUserId = link.guardianId !== String(userId) ? link.guardianId : undefined;
+    if (recipientUserId) {
+      notifyGuardianLink({
+        recipientUserId,
+        teamId,
+        linkId: link.id,
+        status: 'requested',
+      }).catch((err) => logger.error('Failed to send guardian-link request notification', err));
+    }
 
     res.status(httpStatus.CREATED).json({
       success: true,
@@ -102,6 +115,14 @@ export const approveGuardianLink = asyncWrapper(
       linkId: String(linkId).trim()
     });
 
+    // Notify the requester
+    notifyGuardianLink({
+      recipientUserId: link.requestedBy,
+      teamId,
+      linkId: link.id,
+      status: 'approved',
+    }).catch((err) => logger.error('Failed to send guardian-link approved notification', err));
+
     res.status(httpStatus.OK).json({
       success: true,
       data: link
@@ -138,6 +159,14 @@ export const rejectGuardianLink = asyncWrapper(
       userId: String(userId),
       linkId: String(linkId).trim()
     });
+
+    // Notify the requester
+    notifyGuardianLink({
+      recipientUserId: link.requestedBy,
+      teamId,
+      linkId: link.id,
+      status: 'rejected',
+    }).catch((err) => logger.error('Failed to send guardian-link rejected notification', err));
 
     res.status(httpStatus.OK).json({
       success: true,

@@ -9,7 +9,12 @@ import { postSystemMessage } from '@components/teamChat/v1/systemMessage.service
 import { SystemEventKind } from '@components/teamChat/v1/teamChat.interface';
 import { EventType } from './event.interface';
 import { Team } from '@components/team/v1/team.model';
-import { notifyEventCreated } from '@components/notification/v1/notificationDelivery.service';
+import {
+  notifyEventCreated,
+  notifyEventUpdated,
+  notifyEventDeleted,
+} from '@components/notification/v1/notificationDelivery.service';
+import { getTeamChatGateway } from '@components/teamChat/v1/teamChat.gateway';
 import logger from '@core/utils/logger';
 import { permissionService } from '@shared/services/permission.service';
 import { Resource, Action } from '@shared/types/permission.types';
@@ -77,6 +82,16 @@ export const createEvent = asyncWrapper(async (req: RequestWithContext, res: Res
         teamName: team.name,
         excludeUserId: String(userId),
       });
+      // Emit real-time WebSocket notification
+      const gateway = getTeamChatGateway();
+      if (gateway) {
+        gateway.emitEventCreated(teamId, {
+          eventId: event.id,
+          title: event.title,
+          start: event.start,
+          teamName: team.name,
+        }, String(userId));
+      }
     }
   } catch (err) {
     logger.error('Failed to send event created notifications', err);
@@ -185,7 +200,31 @@ export const updateEvent = asyncWrapper(async (req: RequestWithContext, res: Res
       title: event.title
     });
   } catch (err) {
-    console.error('Failed to post system message for event updated:', err);
+    logger.error('Failed to post system message for event updated', err);
+  }
+
+  try {
+    const team = await Team.findById(teamId).select('name').lean();
+    if (team?.name) {
+      await notifyEventUpdated({
+        teamId,
+        eventId: event.id,
+        title: event.title,
+        teamName: team.name,
+        excludeUserId: req.user ? String(req.user._id) : undefined,
+      });
+      // Emit real-time WebSocket notification
+      const gateway = getTeamChatGateway();
+      if (gateway) {
+        gateway.emitEventUpdated(teamId, {
+          eventId: event.id,
+          title: event.title,
+          teamName: team.name,
+        }, req.user ? String(req.user._id) : undefined);
+      }
+    }
+  } catch (err) {
+    logger.error('Failed to send event updated notifications', err);
   }
 
   res.status(httpStatus.OK).json({
@@ -205,7 +244,32 @@ export const deleteEvent = asyncWrapper(async (req: RequestWithContext, res: Res
     throw new AppError(httpStatus.BAD_REQUEST, 'Team ID and Event ID are required');
   }
 
+  const eventDoc = await eventService.getEventById(eventId, teamId).catch(() => null);
   await eventService.deleteEvent(eventId, teamId);
+
+  try {
+    const team = await Team.findById(teamId).select('name').lean();
+    if (team?.name) {
+      await notifyEventDeleted({
+        teamId,
+        eventTitle: eventDoc?.title ?? 'Event',
+        teamName: team.name,
+        excludeUserId: req.user ? String(req.user._id) : undefined,
+      });
+      // Emit real-time WebSocket notification
+      const gateway = getTeamChatGateway();
+      if (gateway) {
+        gateway.emitEventDeleted(teamId, {
+          eventId,
+          eventTitle: eventDoc?.title ?? 'Event',
+          teamName: team.name,
+        }, req.user ? String(req.user._id) : undefined);
+      }
+    }
+  } catch (err) {
+    logger.error('Failed to send event deleted notifications', err);
+  }
+
   res.status(httpStatus.NO_CONTENT).send();
 });
 
