@@ -37,7 +37,6 @@ export const unregisterToken = asyncWrapper(async (req: Request, res: Response) 
   });
 });
 
-
 /**
  * POST /api/v1/notifications/test-send
  * Send a test notification to all devices of the authenticated user.

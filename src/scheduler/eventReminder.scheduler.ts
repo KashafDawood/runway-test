@@ -7,6 +7,7 @@ import { UserRoleStatus } from '@components/userRole/v1/userRole.interface';
 import NotificationLogModel from '@components/notification/v1/notificationLog.model';
 import { notifyEventReminder } from '@components/notification/v1/notificationDelivery.service';
 import { NotificationType } from '@components/notification/v1/notification.interface';
+import { getTeamChatGateway } from '@components/teamChat/v1/teamChat.gateway';
 import logger from '@core/utils/logger';
 
 /**
@@ -67,6 +68,20 @@ async function runEventReminderJob(): Promise<void> {
         eventStart: event.start,
         teamName,
       });
+
+      // Emit real-time WebSocket notifications for each user
+      const gateway = getTeamChatGateway();
+      if (gateway) {
+        for (const userId of userIdsToNotify) {
+          gateway.emitEventReminder(userId, {
+            eventId,
+            title: event.title,
+            eventStart: event.start,
+            teamName,
+          });
+        }
+      }
+
       logger.debug(`Event reminder sent for event ${eventId} to ${userIdsToNotify.length} user(s)`);
     } catch (err) {
       logger.error('Event reminder job failed for event', { eventId: event._id, err });

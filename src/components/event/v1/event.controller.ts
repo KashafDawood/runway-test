@@ -14,6 +14,7 @@ import {
   notifyEventUpdated,
   notifyEventDeleted,
 } from '@components/notification/v1/notificationDelivery.service';
+import { getTeamChatGateway } from '@components/teamChat/v1/teamChat.gateway';
 import logger from '@core/utils/logger';
 import { permissionService } from '@shared/services/permission.service';
 import { Resource, Action } from '@shared/types/permission.types';
@@ -81,6 +82,16 @@ export const createEvent = asyncWrapper(async (req: RequestWithContext, res: Res
         teamName: team.name,
         excludeUserId: String(userId),
       });
+      // Emit real-time WebSocket notification
+      const gateway = getTeamChatGateway();
+      if (gateway) {
+        gateway.emitEventCreated(teamId, {
+          eventId: event.id,
+          title: event.title,
+          start: event.start,
+          teamName: team.name,
+        }, String(userId));
+      }
     }
   } catch (err) {
     logger.error('Failed to send event created notifications', err);
@@ -202,6 +213,15 @@ export const updateEvent = asyncWrapper(async (req: RequestWithContext, res: Res
         teamName: team.name,
         excludeUserId: req.user ? String(req.user._id) : undefined,
       });
+      // Emit real-time WebSocket notification
+      const gateway = getTeamChatGateway();
+      if (gateway) {
+        gateway.emitEventUpdated(teamId, {
+          eventId: event.id,
+          title: event.title,
+          teamName: team.name,
+        }, req.user ? String(req.user._id) : undefined);
+      }
     }
   } catch (err) {
     logger.error('Failed to send event updated notifications', err);
@@ -236,6 +256,15 @@ export const deleteEvent = asyncWrapper(async (req: RequestWithContext, res: Res
         teamName: team.name,
         excludeUserId: req.user ? String(req.user._id) : undefined,
       });
+      // Emit real-time WebSocket notification
+      const gateway = getTeamChatGateway();
+      if (gateway) {
+        gateway.emitEventDeleted(teamId, {
+          eventId,
+          eventTitle: eventDoc?.title ?? 'Event',
+          teamName: team.name,
+        }, req.user ? String(req.user._id) : undefined);
+      }
     }
   } catch (err) {
     logger.error('Failed to send event deleted notifications', err);
