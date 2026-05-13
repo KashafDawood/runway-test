@@ -62,6 +62,34 @@ async function deliverToUser(params: {
   }
 
   const payload: INotificationPayload = { title, body, data, clickUrl: url };
+
+  // Persist inbox row before push so API/FCM clients never see a missing notification.
+  let logId: Types.ObjectId | null = null;
+  try {
+    const created = await NotificationLogModel.create({
+      userId: new Types.ObjectId(userId),
+      type,
+      title,
+      body,
+      data,
+      url,
+      channels: {
+        push: { attempted: true, success: false },
+        email: { attempted: !!emailTemplate, success: false },
+      },
+      sentAt: new Date(),
+      readAt: null,
+      eventId: eventId ? new Types.ObjectId(eventId) : undefined,
+      teamId: teamId ? new Types.ObjectId(teamId) : undefined,
+      inviteId: inviteId ? new Types.ObjectId(inviteId) : undefined,
+      guardianLinkId: guardianLinkId ? new Types.ObjectId(guardianLinkId) : undefined,
+    });
+    logId = created._id as Types.ObjectId;
+  } catch (err) {
+    logger.error('Failed to write notification log', { userId, type, err });
+    return;
+  }
+
   const pushResult = await notificationService.sendToUser(userId, payload);
   const pushSuccess = pushResult.success > 0;
 
@@ -76,26 +104,17 @@ async function deliverToUser(params: {
   }
 
   try {
-    await NotificationLogModel.create({
-      userId: new Types.ObjectId(userId),
-      type,
-      title,
-      body,
-      data,
-      url,
-      channels: {
-        push: { attempted: true, success: pushSuccess },
-        email: { attempted: !!emailTemplate, success: emailSuccess },
-      },
-      sentAt: new Date(),
-      readAt: null,
-      eventId: eventId ? new Types.ObjectId(eventId) : undefined,
-      teamId: teamId ? new Types.ObjectId(teamId) : undefined,
-      inviteId: inviteId ? new Types.ObjectId(inviteId) : undefined,
-      guardianLinkId: guardianLinkId ? new Types.ObjectId(guardianLinkId) : undefined,
-    });
+    await NotificationLogModel.updateOne(
+      { _id: logId },
+      {
+        $set: {
+          'channels.push.success': pushSuccess,
+          'channels.email.success': emailSuccess,
+        },
+      }
+    );
   } catch (err) {
-    logger.error('Failed to write notification log', { userId, type, err });
+    logger.error('Failed to update notification log channels', { userId, type, err });
   }
 }
 
