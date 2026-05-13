@@ -7,6 +7,7 @@ import { db, connectionType } from '@config/db';
 import runAllSeeders from '@seeders/index';
 import { TeamChatGateway } from '@components/teamChat/v1/teamChat.gateway';
 import { startEventReminderScheduler } from './scheduler/eventReminder.scheduler';
+import { ensureNotificationLogTtlIndex } from '@components/notification/v1/notificationLog.model';
 
 const { port } = config.app;
 
@@ -26,6 +27,12 @@ db.once('open', async () => {
     await runAllSeeders();
   } catch (error) {
     logger.error('Failed to run seeders:', error);
+  }
+
+  try {
+    await ensureNotificationLogTtlIndex();
+  } catch (error) {
+    logger.error('Failed to sync notification log TTL index:', error);
   }
 
   // Start event reminder cron job

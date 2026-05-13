@@ -117,18 +117,28 @@ export class TeamChatGateway {
     this.sessionNamespace.use(async (socket: AuthenticatedSocket, next) => {
       try {
         const { token } = socket.handshake.auth as { token?: string };
+        logger.info('Session namespace: incoming connection attempt', {
+          hasToken: !!token,
+          socketId: socket.id
+        });
+
         if (!token) {
+          logger.warn('Session namespace: no token provided');
           return next(new Error('Authentication token required'));
         }
 
         const decoded = await verifyAccessToken(token);
+        logger.info('Session namespace: token verified', { userId: decoded._id });
+
         const user = await UserModel.findById(decoded._id);
         if (!user) {
+          logger.warn('Session namespace: user not found', { userId: decoded._id });
           return next(new Error('User not found'));
         }
 
         socket.userId = String(user._id);
         socket.user = user;
+        logger.info('Session namespace: authenticated', { userId: socket.userId });
         next();
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -211,7 +221,14 @@ export class TeamChatGateway {
 
     this.sessionNamespace.on('connection', (socket: AuthenticatedSocket) => {
       const userId = socket.userId;
+      logger.info('Session namespace: new connection', {
+        socketId: socket.id,
+        userId,
+        handshake: socket.handshake
+      });
+
       if (!userId) {
+        logger.warn('Session namespace: connection without userId, disconnecting');
         socket.disconnect();
         return;
       }
@@ -225,8 +242,8 @@ export class TeamChatGateway {
         message: 'Successfully connected to session updates'
       });
 
-      socket.on('disconnect', () => {
-        logger.info(`User ${userId} left session room: ${roomName}`);
+      socket.on('disconnect', (reason) => {
+        logger.info(`User ${userId} left session room: ${roomName}, reason: ${reason}`);
       });
     });
   }
@@ -239,6 +256,34 @@ export class TeamChatGateway {
     const roomName = `team:${teamId}`;
     this.io.to(roomName).emit('message:new', message);
     logger.info(`Broadcasted message to team room: ${roomName}`);
+  }
+
+  /**
+   * Emit chat message notification to all team members via session namespace (real-time)
+   */
+  public async emitChatMessageNotification(teamId: string, message: Record<string, unknown>, excludeUserId?: string) {
+    const { UserRole } = await import('@components/userRole/v1/userRole.model');
+    const { UserRoleStatus } = await import('@components/userRole/v1/userRole.interface');
+
+    const query: Record<string, unknown> = {
+      teamId: new (await import('mongoose')).Types.ObjectId(teamId),
+      status: UserRoleStatus.ACTIVE,
+    };
+    if (excludeUserId) {
+      query.userId = { $ne: new (await import('mongoose')).Types.ObjectId(excludeUserId) };
+    }
+
+    const roles = await UserRole.find(query).select('userId').lean();
+
+    for (const role of roles) {
+      const userId = role.userId.toString();
+      const roomName = `user:${userId}`;
+      this.sessionNamespace.to(roomName).emit('chat:message', {
+        ...message,
+        notificationType: 'chat_message'
+      });
+    }
+    logger.info(`Broadcasted chat message notification to ${roles.length} users via session namespace`);
   }
 
   /**

@@ -2,6 +2,10 @@ import { Types } from 'mongoose';
 import UserModel from '@components/user/v1/user.model';
 import { UserRole } from '@components/userRole/v1/userRole.model';
 import { UserRoleStatus } from '@components/userRole/v1/userRole.interface';
+import { RoleName } from '@components/role/v1/role.interface';
+import { GuardianLink } from '@components/guardianLink/v1/guardianLink.model';
+import { GuardianLinkStatus } from '@components/guardianLink/v1/guardianLink.interface';
+import { Player } from '@components/player/v1/player.model';
 import * as notificationService from './notification.service';
 import { sendEmail } from '@shared/services/mail';
 import NotificationLogModel from './notificationLog.model';
@@ -20,6 +24,65 @@ export async function getActiveTeamMemberUserIds(teamId: string): Promise<string
     .select('userId')
     .lean();
   return roles.map((r) => r.userId.toString());
+}
+
+/**
+ * Active team members eligible for chat notifications.
+ * Excludes unlinked guardians and minor players without an approved guardian link.
+ */
+export async function getChatNotificationRecipientUserIds(teamId: string): Promise<string[]> {
+  const teamObjectId = new Types.ObjectId(teamId);
+
+  const [roles, approvedLinks, minorPlayers] = await Promise.all([
+    UserRole.find({
+      teamId: teamObjectId,
+      status: UserRoleStatus.ACTIVE,
+    })
+      .select('userId roleName')
+      .lean(),
+    GuardianLink.find({
+      teamId: teamObjectId,
+      status: GuardianLinkStatus.APPROVED,
+    })
+      .select('guardianId playerId')
+      .lean(),
+    Player.find({
+      teamId: teamObjectId,
+      isMinor: true,
+    })
+      .select('userId')
+      .lean(),
+  ]);
+
+  const approvedGuardianUserIds = new Set(
+    approvedLinks.map((link) => link.guardianId.toString())
+  );
+  const approvedMinorPlayerIds = new Set(
+    approvedLinks.map((link) => link.playerId.toString())
+  );
+  const minorPlayerIdByUserId = new Map(
+    minorPlayers.map((player) => [player.userId.toString(), player._id.toString()])
+  );
+
+  return roles
+    .filter((role) => {
+      const userId = role.userId.toString();
+
+      if (role.roleName === RoleName.GUARDIAN) {
+        return approvedGuardianUserIds.has(userId);
+      }
+
+      if (role.roleName === RoleName.PLAYER) {
+        const minorPlayerId = minorPlayerIdByUserId.get(userId);
+        if (!minorPlayerId) {
+          return true;
+        }
+        return approvedMinorPlayerIds.has(minorPlayerId);
+      }
+
+      return true;
+    })
+    .map((role) => role.userId.toString());
 }
 
 /**
@@ -441,5 +504,45 @@ export async function notifyGuardianLink(params: {
     });
   } catch (err) {
     logger.error('notifyGuardianLink delivery failed', { userId: recipientUserId, status, err });
+  }
+}
+
+/**
+ * Notify team members (except sender) when a new chat message is posted.
+ * Does NOT send notifications for system messages.
+ */
+export async function notifyChatMessage(params: {
+  teamId: string;
+  messageId: string;
+  senderName: string;
+  messageText: string;
+  senderUserId: string;
+}): Promise<void> {
+  const { teamId, messageId, senderName, messageText, senderUserId } = params;
+  const userIds = await getChatNotificationRecipientUserIds(teamId);
+  const recipients = userIds.filter((id) => id !== senderUserId);
+
+  if (recipients.length === 0) {
+    return;
+  }
+
+  const chatDetailUrl = notificationUrl.chat.team(teamId);
+  // Truncate message text if too long for notification
+  const truncatedText = messageText.length > 100 ? messageText.substring(0, 97) + '...' : messageText;
+
+  for (const uid of recipients) {
+    try {
+      await deliverToUser({
+        userId: uid,
+        type: NotificationType.CHAT_MESSAGE,
+        title: `New message from ${senderName}`,
+        body: truncatedText,
+        data: { type: 'chat_message', teamId, messageId },
+        url: chatDetailUrl,
+        teamId,
+      });
+    } catch (err) {
+      logger.error('notifyChatMessage delivery failed', { userId: uid, err });
+    }
   }
 }

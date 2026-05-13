@@ -9,6 +9,8 @@ import { UserRole } from '@components/userRole/v1/userRole.model';
 import { GuardianLink } from '@components/guardianLink/v1/guardianLink.model';
 import { GuardianLinkStatus } from '@components/guardianLink/v1/guardianLink.interface';
 import { Player } from '@components/player/v1/player.model';
+import * as notificationDelivery from '@components/notification/v1/notificationDelivery.service';
+import { Team as TeamModel } from '@components/team/v1/team.model';
 
 /**
  * Throws if the message is a system message. Use in any PATCH/DELETE message handler
@@ -139,10 +141,31 @@ export const createUserMessage = async (input: CreateUserMessageInput) => {
     const gateway = getTeamChatGateway();
     if (gateway) {
       gateway.emitNewMessage(teamId, normalized);
+      // Also emit to session namespace for notification dropdown real-time updates
+      gateway.emitChatMessageNotification(teamId, normalized, senderId);
     }
   } catch (error) {
     // Log but don't fail the request if Socket.IO emission fails
     console.error('Failed to emit Socket.IO event:', error);
+  }
+
+  // Send push notifications to team members (excluding sender)
+  // Only for user messages, not system messages
+  try {
+    const team = await TeamModel.findById(teamId).select('name').lean();
+    const sender = await UserModel.findById(senderId).select('name').lean();
+    if (team && sender) {
+      await notificationDelivery.notifyChatMessage({
+        teamId,
+        messageId: created._id.toString(),
+        senderName: sender.name,
+        messageText: text.trim(),
+        senderUserId: senderId,
+      });
+    }
+  } catch (error) {
+    // Log but don't fail the request if push notification fails
+    console.error('Failed to send chat notification:', error);
   }
 
   return normalized;
