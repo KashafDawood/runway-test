@@ -15,6 +15,7 @@ export enum NotificationType {
   GUARDIAN_LINK_REQUEST = 'guardian_link_request',
   GUARDIAN_LINK_APPROVED = 'guardian_link_approved',
   GUARDIAN_LINK_REJECTED = 'guardian_link_rejected',
+  CHAT_MESSAGE = 'chat_message',
 }
 
 export type NotificationChannel = 'push' | 'email';
