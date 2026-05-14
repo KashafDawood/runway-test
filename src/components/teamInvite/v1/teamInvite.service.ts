@@ -23,6 +23,8 @@ import { getTeamChatGateway } from '@components/teamChat/v1/teamChat.gateway';
 import {
   notifyInviteReceived,
   notifyInviteApprovedOrRejected,
+  notifyJoinRequestPending,
+  notifyMinorNeedsGuardianLink,
 } from '@components/notification/v1/notificationDelivery.service';
 
 export interface IInviteEntry {
@@ -651,6 +653,17 @@ export const acceptInvite = async (data: IAcceptInviteInput): Promise<{
     logger.warn(`Failed to send join-request email to coach ${invitedBy.email}: ${err?.message}`);
   });
 
+  notifyJoinRequestPending({
+    teamId: asIdString(invite.teamId),
+    teamName: teamDoc.name,
+    inviteId: invite._id.toString(),
+    memberName: user.name,
+    memberRole: role,
+    excludeUserId: user._id.toString(),
+  }).catch((err) => {
+    logger.error('Failed to send join-request pending notification', err);
+  });
+
   // Remove password from response
   const userObj = user.toObject();
   delete userObj.password;
@@ -844,6 +857,20 @@ export const approvePendingInvite = async (data: IApprovePendingInviteInput): Pr
   }).catch((err) => {
     logger.error('Failed to send invite-approved notification', err);
   });
+
+  if (needsGuardianLink) {
+    const approvedPlayer = await UserModel.findById(invite.acceptedBy).select('name').lean();
+    if (approvedPlayer) {
+      notifyMinorNeedsGuardianLink({
+        teamId: asIdString(invite.teamId),
+        teamName: (invite.teamId as unknown as { name: string }).name ?? 'your team',
+        playerName: approvedPlayer.name,
+        playerUserId: asIdString(invite.acceptedBy),
+      }).catch((err) => {
+        logger.error('Failed to send minor-needs-guardian notification', err);
+      });
+    }
+  }
 
   return {
     invite,

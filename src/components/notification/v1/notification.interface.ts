@@ -9,6 +9,8 @@ export enum NotificationType {
   INVITE_RECEIVED = 'invite_received',
   INVITE_APPROVED = 'invite_approved',
   INVITE_REJECTED = 'invite_rejected',
+  JOIN_REQUEST_PENDING = 'join_request_pending',
+  MINOR_NEEDS_GUARDIAN_LINK = 'minor_needs_guardian_link',
   EVENT_UPDATED = 'event_updated',
   EVENT_DELETED = 'event_deleted',
   ROLE_CHANGED = 'role_changed',
