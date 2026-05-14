@@ -24,7 +24,7 @@ const envsSchema = Joi.object()
     ALLOWED_ORIGINS: Joi.string().default('http://localhost:3000'),
     // JWT Configuration
     JWT_SECRET: Joi.string().required(),
-    JWT_EXPIRES_IN: Joi.string().default('24h'),
+    JWT_EXPIRES_IN: Joi.string().default('30d'),
     // Mail Configuration
     ADMIN_EMAIL: Joi.string().email(),
     MAIL_HOST: Joi.string().default('smtp.resend.com'),
