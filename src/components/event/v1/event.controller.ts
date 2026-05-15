@@ -6,6 +6,7 @@ import * as eventService from './event.service';
 import * as rsvpService from './rsvp.service';
 import * as attendanceService from './attendance.service';
 import { postSystemMessage } from '@components/teamChat/v1/systemMessage.service';
+import { buildEventSystemMessagePayload } from '@components/teamChat/v1/systemMessagePayload.util';
 import { SystemEventKind } from '@components/teamChat/v1/teamChat.interface';
 import { EventType } from './event.interface';
 import { Team } from '@components/team/v1/team.model';
@@ -69,9 +70,18 @@ export const createEvent = asyncWrapper(async (req: RequestWithContext, res: Res
   });
 
   try {
+    let attendingCount: number | undefined;
+    try {
+      const rsvpSummary = await rsvpService.getRsvpSummary(event.id, teamId);
+      attendingCount = rsvpSummary.attending;
+    } catch {
+      attendingCount = undefined;
+    }
     await postSystemMessage(teamId, SystemEventKind.EVENT_CREATED, {
-      eventId: event.id,
-      title: event.title
+      ...buildEventSystemMessagePayload(event, {
+        actorName: req.user?.name,
+        attendingCount
+      })
     });
   } catch (err) {
     logger.error('Failed to post system message for event created', err);
@@ -208,9 +218,18 @@ export const updateEvent = asyncWrapper(async (req: RequestWithContext, res: Res
   });
 
   try {
+    let attendingCount: number | undefined;
+    try {
+      const rsvpSummary = await rsvpService.getRsvpSummary(event.id, teamId);
+      attendingCount = rsvpSummary.attending;
+    } catch {
+      attendingCount = undefined;
+    }
     await postSystemMessage(teamId, SystemEventKind.EVENT_UPDATED, {
-      eventId: event.id,
-      title: event.title
+      ...buildEventSystemMessagePayload(event, {
+        actorName: req.user?.name,
+        attendingCount
+      })
     });
   } catch (err) {
     logger.error('Failed to post system message for event updated', err);
