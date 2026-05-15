@@ -46,6 +46,7 @@ export interface CreateEventInput {
   start?: Date;
   end?: Date | null;
   location?: string;
+  locationUrl?: string;
   recurrence?: RecurrenceRule;
 }
 
@@ -56,6 +57,7 @@ export interface UpdateEventInput {
   start?: Date;
   end?: Date | null;
   location?: string;
+  locationUrl?: string;
   recurrence?: RecurrenceRule | null;
 }
 
@@ -67,6 +69,7 @@ export interface EventInstance {
   end: Date | null;
   description?: string;
   location?: string;
+  locationUrl?: string;
   isRecurring?: boolean;
   teamId?: string;
 }
@@ -135,6 +138,7 @@ export function normalizeEvent(
     start: Date;
     end?: Date;
     location?: string;
+    locationUrl?: string;
     createdBy?: { toString: () => string };
     createdAt: Date;
     updatedAt: Date;
@@ -149,6 +153,7 @@ export function normalizeEvent(
     start: json.start,
     end: json.end,
     location: json.location,
+    locationUrl: json.locationUrl,
     createdBy: json.createdBy?.toString(),
     createdAt: json.createdAt,
     updatedAt: json.updatedAt,
@@ -179,7 +184,8 @@ function expandRecurringEvent(
   start: Date; 
   end: Date | null; 
   description?: string; 
-  location?: string; 
+  location?: string;
+  locationUrl?: string;
   isRecurring: true 
 }> {
   const recurrence = event.recurrence;
@@ -192,7 +198,8 @@ function expandRecurringEvent(
     start: Date; 
     end: Date | null; 
     description?: string; 
-    location?: string; 
+    location?: string;
+    locationUrl?: string;
     isRecurring: true 
   }> = [];
   const eventStart = new Date(event.start);
@@ -220,6 +227,7 @@ function expandRecurringEvent(
         end: event.end ? new Date(currentEnd) : null,
         description: event.description,
         location: event.location,
+        locationUrl: event.locationUrl,
         isRecurring: true
       });
     }
@@ -263,6 +271,7 @@ export async function createEvent(
     start,
     end: end ?? null,
     location: input.location?.trim(),
+    locationUrl: input.locationUrl?.trim(),
     recurrence: input.recurrence
   });
 
@@ -300,7 +309,13 @@ export async function updateEvent(
   if (Object.prototype.hasOwnProperty.call(input, 'end')) {
     update.end = input.end != null ? new Date(input.end) : null;
   }
-  if (input.location !== undefined) update.location = input.location?.trim() ?? null;
+  if (input.location !== undefined) {
+    update.location = input.location?.trim() ?? null;
+    if (!update.location) update.locationUrl = null;
+  }
+  if (input.locationUrl !== undefined) {
+    update.locationUrl = input.locationUrl?.trim() ?? null;
+  }
   if (Object.prototype.hasOwnProperty.call(input, 'recurrence')) {
     update.recurrence = input.recurrence ?? undefined;
   }
@@ -396,6 +411,7 @@ export async function getEventsByTeamAndDateRange(
           end: event.end ?? null,
           description: event.description,
           location: event.location,
+          locationUrl: event.locationUrl,
           isRecurring: false
         });
       } else {
@@ -434,6 +450,7 @@ export async function getEventsByTeamAndDateRange(
     end?: Date;
     description?: string;
     location?: string;
+    locationUrl?: string;
     recurrence?: unknown;
   }) => ({
     eventId: e._id.toString(),
@@ -443,6 +460,7 @@ export async function getEventsByTeamAndDateRange(
     end: e.end ?? null,
     description: e.description,
     location: e.location,
+    locationUrl: e.locationUrl,
     isRecurring: !!e.recurrence
   }));
 
@@ -501,6 +519,7 @@ export async function getEventsByTeams(
           end: e.end ?? null,
           description: e.description,
           location: e.location,
+          locationUrl: e.locationUrl,
           isRecurring: false
         });
       } else {
@@ -540,6 +559,7 @@ export async function getEventsByTeams(
     end?: Date;
     description?: string;
     location?: string;
+    locationUrl?: string;
     recurrence?: unknown;
   }>).map((e) => ({
     eventId: e._id.toString(),
@@ -550,6 +570,7 @@ export async function getEventsByTeams(
     end: e.end ?? null,
     description: e.description,
     location: e.location,
+    locationUrl: e.locationUrl,
     isRecurring: !!e.recurrence
   }));
 

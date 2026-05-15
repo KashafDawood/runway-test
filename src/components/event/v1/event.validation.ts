@@ -43,6 +43,7 @@ const baseEventBodySchema = {
     'date.format': 'End must be a valid ISO 8601 date'
   }),
   location: Joi.string().trim().max(200).allow('', null).optional(),
+  locationUrl: Joi.string().trim().max(2048).uri().allow('', null).optional(),
   recurrence: recurrenceRuleSchema.optional()
 };
 
@@ -60,6 +61,7 @@ export const updateEventSchema: ValidationSchema = {
     start: Joi.date().iso().optional(),
     end: Joi.date().iso().allow(null).optional(),
     location: Joi.string().trim().max(200).allow('', null).optional(),
+    locationUrl: Joi.string().trim().max(2048).uri().allow('', null).optional(),
     recurrence: Joi.alternatives().try(recurrenceRuleSchema, Joi.valid(null)).optional()
   })
 };

@@ -61,6 +61,11 @@ const eventSchema = new Schema<IEvent>(
       trim: true,
       maxlength: [200, 'Location cannot exceed 200 characters']
     },
+    locationUrl: {
+      type: String,
+      trim: true,
+      maxlength: [2048, 'Location URL cannot exceed 2048 characters']
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

@@ -35,6 +35,7 @@ export const createEvent = asyncWrapper(async (req: RequestWithContext, res: Res
     start?: string;
     end?: string | null;
     location?: string;
+    locationUrl?: string;
     recurrence?: { frequency: string; interval: number; endDate?: string; count?: number };
   };
 
@@ -52,6 +53,7 @@ export const createEvent = asyncWrapper(async (req: RequestWithContext, res: Res
     start: body.start != null ? new Date(body.start) : undefined,
     end: body.end != null ? new Date(body.end) : null,
     location: body.location,
+    locationUrl: body.locationUrl,
     recurrence: body.recurrence
       ? {
           frequency: body.recurrence.frequency as 'daily' | 'weekly' | 'monthly',
@@ -126,6 +128,7 @@ export const getEvent = asyncWrapper(async (req: RequestWithContext, res: Respon
     end: normalized.end,
     description: normalized.description,
     location: normalized.location,
+    locationUrl: normalized.locationUrl,
     isRecurring: normalized.isRecurring,
     teamId: normalized.teamId
   };
@@ -165,6 +168,7 @@ export const updateEvent = asyncWrapper(async (req: RequestWithContext, res: Res
     start?: string;
     end?: string;
     location?: string;
+    locationUrl?: string;
     recurrence?: { frequency: string; interval: number; endDate?: string; count?: number } | null;
   };
 
@@ -181,6 +185,7 @@ export const updateEvent = asyncWrapper(async (req: RequestWithContext, res: Res
       ? (body.end != null ? new Date(body.end) : null)
       : undefined,
     location: body.location,
+    locationUrl: body.locationUrl,
     recurrence:
       body.recurrence === null
         ? null
