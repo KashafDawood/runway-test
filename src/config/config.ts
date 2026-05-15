@@ -40,6 +40,8 @@ const envsSchema = Joi.object()
     FIREBASE_CLIENT_EMAIL: Joi.string().email().optional(),
     FIREBASE_PRIVATE_KEY: Joi.string().optional(),
     FIREBASE_SERVICE_ACCOUNT_PATH: Joi.string().optional(),
+    FIREBASE_STORAGE_BUCKET: Joi.string().optional(),
+    STORAGE_DRIVER: Joi.string().valid('disk', 'firebase').default('disk'),
     // Event reminder job (optional)
     EVENT_REMINDER_MINUTES_BEFORE: Joi.number().optional().default(60),
     EVENT_REMINDER_CRON: Joi.string().optional().default('*/15 * * * *'),
@@ -92,6 +94,10 @@ export default {
     clientEmail: envVars.FIREBASE_CLIENT_EMAIL,
     privateKey: envVars.FIREBASE_PRIVATE_KEY,
     serviceAccountPath: envVars.FIREBASE_SERVICE_ACCOUNT_PATH,
+    storageBucket: envVars.FIREBASE_STORAGE_BUCKET,
+  },
+  storage: {
+    driver: envVars.STORAGE_DRIVER as 'disk' | 'firebase',
   },
   eventReminder: {
     minutesBefore: envVars.EVENT_REMINDER_MINUTES_BEFORE,

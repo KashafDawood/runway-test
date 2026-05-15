@@ -27,12 +27,12 @@ const teamSchema = new Schema<ITeam>(
     logoPath: {
       type: String,
       trim: true,
-      maxlength: [500, 'logoPath cannot exceed 500 characters']
+      maxlength: [2048, 'logoPath cannot exceed 2048 characters']
     },
     coverImagePath: {
       type: String,
       trim: true,
-      maxlength: [500, 'coverImagePath cannot exceed 500 characters']
+      maxlength: [2048, 'coverImagePath cannot exceed 2048 characters']
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

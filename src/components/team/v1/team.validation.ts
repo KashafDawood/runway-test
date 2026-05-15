@@ -38,8 +38,8 @@ export const createTeamSchema: ValidationSchema = {
       'string.max': 'Color cannot exceed 20 characters'
     }),
 
-  logoPath: Joi.string().optional().trim().max(500),
-  coverImagePath: Joi.string().optional().trim().max(500),
+  logoPath: Joi.string().optional().trim().max(2048),
+  coverImagePath: Joi.string().optional().trim().max(2048),
   
   settings: Joi.object({
     allowPlayerInvites: Joi.boolean().optional(),
@@ -71,8 +71,8 @@ export const updateTeamSchema: ValidationSchema = {
     .trim()
     .max(20),
 
-  logoPath: Joi.string().optional().trim().max(500),
-  coverImagePath: Joi.string().optional().trim().max(500),
+  logoPath: Joi.string().optional().trim().max(2048),
+  coverImagePath: Joi.string().optional().trim().max(2048),
   
   settings: Joi.object({
     allowPlayerInvites: Joi.boolean().optional(),
