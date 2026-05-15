@@ -37,6 +37,8 @@ export const createEvent = asyncWrapper(async (req: RequestWithContext, res: Res
     location?: string;
     locationUrl?: string;
     recurrence?: { frequency: string; interval: number; endDate?: string; count?: number };
+    images?: string[];
+    uploadedImagePaths?: string[];
   };
 
   if (!userId) {
@@ -61,7 +63,9 @@ export const createEvent = asyncWrapper(async (req: RequestWithContext, res: Res
           endDate: body.recurrence.endDate ? new Date(body.recurrence.endDate) : undefined,
           count: body.recurrence.count
         }
-      : undefined
+      : undefined,
+    images: body.images,
+    uploadedImagePaths: body.uploadedImagePaths
   });
 
   try {
@@ -170,6 +174,8 @@ export const updateEvent = asyncWrapper(async (req: RequestWithContext, res: Res
     location?: string;
     locationUrl?: string;
     recurrence?: { frequency: string; interval: number; endDate?: string; count?: number } | null;
+    images?: string[];
+    uploadedImagePaths?: string[];
   };
 
   if (!teamId || !eventId) {
@@ -196,7 +202,9 @@ export const updateEvent = asyncWrapper(async (req: RequestWithContext, res: Res
               endDate: body.recurrence.endDate ? new Date(body.recurrence.endDate) : undefined,
               count: body.recurrence.count
             }
-          : undefined
+          : undefined,
+    images: body.images,
+    uploadedImagePaths: body.uploadedImagePaths
   });
 
   try {

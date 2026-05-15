@@ -48,6 +48,8 @@ export interface CreateEventInput {
   location?: string;
   locationUrl?: string;
   recurrence?: RecurrenceRule;
+  images?: string[];
+  uploadedImagePaths?: string[];
 }
 
 export interface UpdateEventInput {
@@ -59,6 +61,18 @@ export interface UpdateEventInput {
   location?: string;
   locationUrl?: string;
   recurrence?: RecurrenceRule | null;
+  images?: string[];
+  uploadedImagePaths?: string[];
+}
+
+const MAX_EVENT_IMAGES = 5;
+
+function mergeEventImages(
+  kept: string[] | undefined,
+  uploaded: string[] | undefined
+): string[] {
+  const merged = [...(kept ?? []), ...(uploaded ?? [])].filter(Boolean);
+  return merged.slice(0, MAX_EVENT_IMAGES);
 }
 
 export interface EventInstance {
@@ -70,6 +84,7 @@ export interface EventInstance {
   description?: string;
   location?: string;
   locationUrl?: string;
+  images?: string[];
   isRecurring?: boolean;
   teamId?: string;
 }
@@ -139,6 +154,7 @@ export function normalizeEvent(
     end?: Date;
     location?: string;
     locationUrl?: string;
+    images?: string[];
     createdBy?: { toString: () => string };
     createdAt: Date;
     updatedAt: Date;
@@ -154,6 +170,7 @@ export function normalizeEvent(
     end: json.end,
     location: json.location,
     locationUrl: json.locationUrl,
+    images: json.images?.length ? json.images : undefined,
     createdBy: json.createdBy?.toString(),
     createdAt: json.createdAt,
     updatedAt: json.updatedAt,
@@ -262,6 +279,8 @@ export async function createEvent(
     }
   }
 
+  const images = mergeEventImages(input.images, input.uploadedImagePaths);
+
   const created = await Event.create({
     teamId: toObjectId(teamId),
     createdBy: toObjectId(userId),
@@ -272,7 +291,8 @@ export async function createEvent(
     end: end ?? null,
     location: input.location?.trim(),
     locationUrl: input.locationUrl?.trim(),
-    recurrence: input.recurrence
+    recurrence: input.recurrence,
+    ...(images.length > 0 ? { images } : {})
   });
 
   return normalizeEvent(created) as ReturnType<typeof normalizeEvent>;
@@ -318,6 +338,16 @@ export async function updateEvent(
   }
   if (Object.prototype.hasOwnProperty.call(input, 'recurrence')) {
     update.recurrence = input.recurrence ?? undefined;
+  }
+
+  const hasImageUpdate =
+    input.uploadedImagePaths !== undefined || Object.prototype.hasOwnProperty.call(input, 'images');
+
+  if (hasImageUpdate) {
+    const kept = Object.prototype.hasOwnProperty.call(input, 'images')
+      ? (input.images ?? [])
+      : (event.images ?? []);
+    update.images = mergeEventImages(kept, input.uploadedImagePaths);
   }
 
   const updated = await Event.findByIdAndUpdate(
