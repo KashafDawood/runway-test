@@ -1,5 +1,6 @@
 import { SystemEventKind } from './teamChat.interface';
 import { createSystemMessage } from './teamChat.service';
+import type { EventSystemMessagePayload } from './systemMessagePayload.util';
 
 export type NormalizedMessage = Awaited<ReturnType<typeof createSystemMessage>>;
 
@@ -41,7 +42,7 @@ function getSystemMessageText(
 export async function postSystemMessage(
   teamId: string,
   eventKind: SystemEventKind,
-  payload?: Record<string, unknown>
+  payload?: Record<string, unknown> | EventSystemMessagePayload
 ): Promise<NormalizedMessage> {
   const text = getSystemMessageText(eventKind, payload);
   const meta = {

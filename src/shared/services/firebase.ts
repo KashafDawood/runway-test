@@ -5,6 +5,8 @@ import logger from '@core/utils/logger';
 
 let app: admin.app.App | null = null;
 
+const getStorageBucketName = (): string | undefined => config.firebase.storageBucket;
+
 /**
  * Initialize Firebase Admin SDK.
  * Uses FIREBASE_SERVICE_ACCOUNT_PATH or FIREBASE_* env vars.
@@ -24,10 +26,16 @@ export function getFirebaseApp(): admin.app.App | null {
       : path.resolve(process.cwd(), fb.serviceAccountPath)
     : null;
 
+  const initOptions: admin.AppOptions = {};
+  if (getStorageBucketName()) {
+    initOptions.storageBucket = getStorageBucketName();
+  }
+
   if (serviceAccountPath) {
     try {
       app = admin.initializeApp({
         credential: admin.credential.cert(serviceAccountPath),
+        ...initOptions,
       });
       logger.info('Firebase Admin initialized from service account file');
       return app;
@@ -46,6 +54,7 @@ export function getFirebaseApp(): admin.app.App | null {
           clientEmail: fb.clientEmail,
           privateKey,
         }),
+        ...initOptions,
       });
       logger.info('Firebase Admin initialized from environment');
       return app;
@@ -62,4 +71,13 @@ export function getFirebaseApp(): admin.app.App | null {
 export function getMessaging(): admin.messaging.Messaging | null {
   const firebaseApp = getFirebaseApp();
   return firebaseApp ? firebaseApp.messaging() : null;
+}
+
+export function getStorageBucket(): ReturnType<admin.storage.Storage['bucket']> | null {
+  const firebaseApp = getFirebaseApp();
+  const bucketName = getStorageBucketName();
+  if (!firebaseApp || !bucketName) {
+    return null;
+  }
+  return firebaseApp.storage().bucket(bucketName);
 }

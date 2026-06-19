@@ -24,7 +24,14 @@ const envsSchema = Joi.object()
     ALLOWED_ORIGINS: Joi.string().default('http://localhost:3000'),
     // JWT Configuration
     JWT_SECRET: Joi.string().required(),
-    JWT_EXPIRES_IN: Joi.string().default('24h'),
+    JWT_EXPIRES_IN: Joi.string().default('30d'),
+    JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
+    JWT_REFRESH_EXPIRES_IN: Joi.string().default('90d'),
+    REFRESH_COOKIE_NAME: Joi.string().default('runway_refresh'),
+    REFRESH_COOKIE_SECURE: Joi.string().valid('true', 'false').default('false'),
+    REFRESH_COOKIE_SAME_SITE: Joi.string().valid('strict', 'lax', 'none').default('lax'),
+    AUTH_REFRESH_TOKEN_BODY: Joi.string().valid('true', 'false').default('true'),
+    AUTH_V2_ENABLED: Joi.string().valid('true', 'false').default('true'),
     // Mail Configuration
     ADMIN_EMAIL: Joi.string().email(),
     MAIL_HOST: Joi.string().default('smtp.resend.com'),
@@ -40,6 +47,8 @@ const envsSchema = Joi.object()
     FIREBASE_CLIENT_EMAIL: Joi.string().email().optional(),
     FIREBASE_PRIVATE_KEY: Joi.string().optional(),
     FIREBASE_SERVICE_ACCOUNT_PATH: Joi.string().optional(),
+    FIREBASE_STORAGE_BUCKET: Joi.string().optional(),
+    STORAGE_DRIVER: Joi.string().valid('disk', 'firebase').default('disk'),
     // Event reminder job (optional)
     EVENT_REMINDER_MINUTES_BEFORE: Joi.number().optional().default(60),
     EVENT_REMINDER_CRON: Joi.string().optional().default('*/15 * * * *'),
@@ -74,6 +83,7 @@ export default {
   jwt: {
     secret: envVars.JWT_SECRET,
     expiresIn: envVars.JWT_EXPIRES_IN,
+    accessExpiresIn: envVars.JWT_ACCESS_EXPIRES_IN,
   },
   mail: {
     host: envVars.MAIL_HOST,
@@ -86,12 +96,25 @@ export default {
   auth: {
     useExternalService: envVars.USE_EXTERNAL_AUTH === 'true',
     externalServiceUrl: envVars.AUTH_SERVICE_URL,
+    v2Enabled: envVars.AUTH_V2_ENABLED === 'true',
+    refreshExpiresIn: envVars.JWT_REFRESH_EXPIRES_IN,
+    refreshTokenBodyEnabled: envVars.AUTH_REFRESH_TOKEN_BODY === 'true',
+    refreshCookie: {
+      name: envVars.REFRESH_COOKIE_NAME,
+      secure: envVars.REFRESH_COOKIE_SECURE === 'true' || envVars.NODE_ENV === 'production',
+      sameSite: envVars.REFRESH_COOKIE_SAME_SITE as 'strict' | 'lax' | 'none',
+      path: '/api/v1/auth',
+    },
   },
   firebase: {
     projectId: envVars.FIREBASE_PROJECT_ID,
     clientEmail: envVars.FIREBASE_CLIENT_EMAIL,
     privateKey: envVars.FIREBASE_PRIVATE_KEY,
     serviceAccountPath: envVars.FIREBASE_SERVICE_ACCOUNT_PATH,
+    storageBucket: envVars.FIREBASE_STORAGE_BUCKET,
+  },
+  storage: {
+    driver: envVars.STORAGE_DRIVER as 'disk' | 'firebase',
   },
   eventReminder: {
     minutesBefore: envVars.EVENT_REMINDER_MINUTES_BEFORE,

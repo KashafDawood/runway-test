@@ -117,6 +117,22 @@ export const updateUserRole = async (
     );
   }
 
+  // 7b. Assistant coaches cannot modify the coach or assign the coach role
+  if (coachUserRole.roleName === RoleName.ASSISTANT_COACH) {
+    if (existingUserRole.roleName === RoleName.COACH) {
+      throw new AppError(
+        httpStatus.FORBIDDEN,
+        'Assistant coaches cannot change the coach\'s role'
+      );
+    }
+    if (newRoleName === RoleName.COACH) {
+      throw new AppError(
+        httpStatus.FORBIDDEN,
+        'Only the coach can assign the coach role'
+      );
+    }
+  }
+
   // 8. Prevent invalid role transitions
   // Business rule: Can't change from coach to another role if they're the only coach
   // (This prevents removing the last coach from a team)

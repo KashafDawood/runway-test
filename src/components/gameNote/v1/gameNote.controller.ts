@@ -6,6 +6,7 @@ import { RequestWithContext } from 'types/request';
 import { RoleName } from '@components/role/v1/role.interface';
 import * as gameNoteService from './gameNote.service';
 import { postSystemMessage } from '@components/teamChat/v1/systemMessage.service';
+import { buildEventSystemMessagePayload } from '@components/teamChat/v1/systemMessagePayload.util';
 import { SystemEventKind } from '@components/teamChat/v1/teamChat.interface';
 import { Team } from '@components/team/v1/team.model';
 import { Event } from '@components/event/v1/event.model';
@@ -41,11 +42,30 @@ export const upsertTeamNote = asyncWrapper(async (req: RequestWithContext, res: 
   });
 
   try {
-    await postSystemMessage(teamId, SystemEventKind.GAME_NOTES_PUBLISHED, {
-      teamId,
-      eventId: note.eventId,
-      noteId: note.id
-    });
+    const eventDoc = await Event.findById(eventId)
+      .select('title start end location type')
+      .lean();
+    if (eventDoc) {
+      await postSystemMessage(
+        teamId,
+        SystemEventKind.GAME_NOTES_PUBLISHED,
+        {
+          teamId,
+          noteId: note.id,
+          ...buildEventSystemMessagePayload(
+            {
+              id: String(eventDoc._id),
+              title: eventDoc.title,
+              start: eventDoc.start,
+              end: eventDoc.end,
+              location: eventDoc.location,
+              type: eventDoc.type
+            },
+            { actorName: req.user?.name }
+          )
+        }
+      );
+    }
   } catch (err) {
     logger.error('Failed to post system message for game notes published', err);
   }
@@ -108,12 +128,31 @@ export const upsertPlayerNote = asyncWrapper(async (req: RequestWithContext, res
   });
 
   try {
-    await postSystemMessage(teamId, SystemEventKind.GAME_NOTES_PUBLISHED, {
-      teamId,
-      eventId: note.eventId,
-      noteId: note.id,
-      playerId: note.playerId
-    });
+    const eventDoc = await Event.findById(eventId)
+      .select('title start end location type')
+      .lean();
+    if (eventDoc) {
+      await postSystemMessage(
+        teamId,
+        SystemEventKind.GAME_NOTES_PUBLISHED,
+        {
+          teamId,
+          noteId: note.id,
+          playerId: note.playerId,
+          ...buildEventSystemMessagePayload(
+            {
+              id: String(eventDoc._id),
+              title: eventDoc.title,
+              start: eventDoc.start,
+              end: eventDoc.end,
+              location: eventDoc.location,
+              type: eventDoc.type
+            },
+            { actorName: req.user?.name }
+          )
+        }
+      );
+    }
   } catch (err) {
     logger.error('Failed to post system message for player game notes published', err);
   }

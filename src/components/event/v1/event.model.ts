@@ -61,6 +61,19 @@ const eventSchema = new Schema<IEvent>(
       trim: true,
       maxlength: [200, 'Location cannot exceed 200 characters']
     },
+    locationUrl: {
+      type: String,
+      trim: true,
+      maxlength: [2048, 'Location URL cannot exceed 2048 characters']
+    },
+    images: {
+      type: [String],
+      default: undefined,
+      validate: {
+        validator: (v: string[]) => !v || v.length <= 5,
+        message: 'At most 5 images allowed'
+      }
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

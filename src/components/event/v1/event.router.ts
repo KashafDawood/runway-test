@@ -11,6 +11,7 @@ import * as eventController from './event.controller';
 import * as eventValidation from './event.validation';
 import * as rsvpValidation from './rsvp.validation';
 import * as attendanceValidation from './attendance.validation';
+import { handleEventImageUpload } from './eventImageUpload.middleware';
 
 const router = Router();
 
@@ -49,6 +50,7 @@ router.post(
   requireEmailVerified,
   extractTeamContext,
   requireTeamAdmin,
+  ...handleEventImageUpload,
   validate(eventValidation.createEventSchema),
   eventController.createEvent
 );
@@ -75,6 +77,7 @@ router.put(
   requireEmailVerified,
   extractTeamContext,
   requireTeamAdmin,
+  ...handleEventImageUpload,
   validate(eventValidation.updateEventSchema),
   eventController.updateEvent
 );

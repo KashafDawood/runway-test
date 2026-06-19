@@ -30,6 +30,14 @@ export interface SystemMessageMeta {
   paymentRequestId?: string;
   noteId?: string;
   title?: string;
+  /** ISO-8601 start/end for event cards in chat */
+  start?: string;
+  end?: string | null;
+  location?: string;
+  eventType?: string;
+  /** Display name of user who triggered the system message */
+  actorName?: string;
+  attendingCount?: number;
   [key: string]: unknown;
 }
 

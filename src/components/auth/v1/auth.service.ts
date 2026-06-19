@@ -9,12 +9,25 @@ import { RoleName } from '@components/role/v1/role.interface';
 import { UserRoleStatus } from '@components/userRole/v1/userRole.interface';
 import TokenModel from './token.model';
 import { TOKEN_TYPES, TOKEN_EXPIRY } from './auth.constants';
-import { genAccessToken } from '@shared/services/jwt';
+import { genAccessTokenFromUser } from '@shared/services/jwt';
 import { sendEmail } from '@shared/services/mail';
 import AppError from '@core/utils/appError';
 import config from '@config/config';
 import logger from '@core/utils/logger';
 import { computeNeedsGuardianLink } from '@components/player/v1/playerOnboarding.util';
+import { RefreshPlatform } from './refreshSession.model';
+import {
+  issueAuthTokens,
+  AuthTokenBundle,
+  AuthTeamPayload,
+  AuthUserPayload,
+} from './authToken.helper';
+import {
+  rotateRefreshSession,
+  revokeSessionByToken,
+  revokeAllForUser,
+  listActiveSessionsForUser,
+} from './refreshToken.service';
 
 interface ISignUpInput {
   email: string;
@@ -24,38 +37,78 @@ interface ISignUpInput {
   skipEmailVerification?: boolean;
 }
 
-interface ISignUpResponse {
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    email_verified: boolean;
-    avatar?: string;
-    dateOfBirth?: Date | string;
-  };
-  token: string;
-  verificationCode?: string; // For testing email verification
+interface ISignUpResponse extends AuthTokenBundle {}
+
+interface IAuthResponse extends AuthTokenBundle {}
+
+interface AuthContextInput {
+  platform?: RefreshPlatform;
+  deviceLabel?: string;
 }
-interface IAuthResponse {
-  user: {
-    id: string;
+
+const mapUserPayload = (user: {
+  _id: string;
+  name: string;
+  email: string;
+  email_verified: boolean;
+  avatar?: string;
+  dateOfBirth?: Date | string;
+}): AuthUserPayload => ({
+  id: user._id.toString(),
+  name: user.name,
+  email: user.email,
+  email_verified: user.email_verified,
+  avatar: user.avatar,
+  dateOfBirth: user.dateOfBirth,
+});
+
+const resolveSessionTeam = async (
+  userId: string,
+  preferredTeamId?: string | null,
+): Promise<AuthTeamPayload | undefined> => {
+  let membership = null;
+  if (preferredTeamId) {
+    membership = await UserRole.findOne({
+      userId,
+      teamId: preferredTeamId,
+      status: UserRoleStatus.ACTIVE,
+    }).populate('teamId', 'name sport season');
+  }
+
+  if (!membership) {
+    membership = await UserRole.findOne({
+      userId,
+      status: UserRoleStatus.ACTIVE,
+    })
+      .sort({ joinedAt: -1 })
+      .populate('teamId', 'name sport season');
+  }
+
+  if (!membership?.teamId) {
+    return undefined;
+  }
+
+  const teamDoc = membership.teamId as unknown as {
+    _id: string;
     name: string;
-    email: string;
-    email_verified: boolean;
-    avatar?: string;
-    dateOfBirth?: Date | string;
-  };
-  team?: {
-    id: string;
-    name: string;
-    role: RoleName;
     sport?: string;
     season?: string;
-    needsGuardianLink?: boolean;
   };
-  token: string;
-  verificationCode?: string; // For testing email verification
-}
+
+  const needsGuardianLink =
+    membership.roleName === RoleName.PLAYER
+      ? await computeNeedsGuardianLink(userId.toString(), teamDoc._id.toString())
+      : false;
+
+  return {
+    id: teamDoc._id.toString(),
+    name: teamDoc.name,
+    sport: teamDoc.sport,
+    season: teamDoc.season,
+    role: membership.roleName,
+    ...(membership.roleName === RoleName.PLAYER ? { needsGuardianLink } : {}),
+  };
+};
 
 /**
  * Generate a random 6 digit verification code
@@ -68,8 +121,18 @@ const generateVerificationCode = (): string => {
   return code.toString();
 }
 
-export const signUp = async (input: ISignUpInput): Promise<ISignUpResponse> => {
-  const { email, password, name, dateOfBirth, skipEmailVerification = false } = input;
+export const signUp = async (
+  input: ISignUpInput & AuthContextInput,
+): Promise<ISignUpResponse & { _refreshRawToken?: string }> => {
+  const {
+    email,
+    password,
+    name,
+    dateOfBirth,
+    skipEmailVerification = false,
+    platform = 'web',
+    deviceLabel,
+  } = input;
 
   // Check if user already exists
   const existingUser = await UserModel.findOne({ email });
@@ -117,27 +180,21 @@ export const signUp = async (input: ISignUpInput): Promise<ISignUpResponse> => {
     }
   }
 
-  // Generate JWT
-  const token = await genAccessToken(user._id, {
-    email: user.email,
-    email_verified: user.email_verified,
+  return issueAuthTokens({
+    user: mapUserPayload(user),
+    platform,
+    deviceLabel,
+    verificationCode:
+      !skipEmailVerification && config.app.isDev ? verificationCode : undefined,
   });
-
-  return {
-    user: {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      email_verified: user.email_verified,
-      avatar: user.avatar,
-      dateOfBirth: user.dateOfBirth,
-    },
-    token,
-    verificationCode: !skipEmailVerification && config.app.isDev ? verificationCode : undefined,
-  };
 };
 
-export const signIn = async (email: string, password: string): Promise<IAuthResponse> => {
+export const signIn = async (
+  email: string,
+  password: string,
+  context: AuthContextInput = {},
+): Promise<IAuthResponse & { _refreshRawToken?: string }> => {
+  const { platform = 'web', deviceLabel } = context;
   // Find user with password
   const user = await UserModel.findOne({ email }).select('+password');
 
@@ -151,70 +208,26 @@ export const signIn = async (email: string, password: string): Promise<IAuthResp
     throw new AppError(httpStatus.UNAUTHORIZED, 'Invalid email or password');
   }
 
-  // Generate JWT
-  const token = await genAccessToken(user._id, {
-    email: user.email,
-    email_verified: user.email_verified,
-  });
-
   const userRecord = await UserModel.findById(user._id).select('activeTeamId');
-  const preferredTeamId = userRecord?.activeTeamId;
+  const sessionTeam = await resolveSessionTeam(
+    user._id.toString(),
+    userRecord?.activeTeamId?.toString(),
+  );
 
-  let membership = null;
-  if (preferredTeamId) {
-    membership = await UserRole.findOne({
-      userId: user._id,
-      teamId: preferredTeamId,
-      status: UserRoleStatus.ACTIVE
-    }).populate('teamId', 'name sport season');
-  }
-  if (!membership) {
-    membership = await UserRole.findOne({
-      userId: user._id,
-      status: UserRoleStatus.ACTIVE
-    })
-      .sort({ joinedAt: -1 })
-      .populate('teamId', 'name sport season');
-  }
-
-  let sessionTeam: IAuthResponse['team'];
-  if (membership?.teamId) {
-    const teamDoc = membership.teamId as unknown as {
-      _id: string;
-      name: string;
-      sport?: string;
-      season?: string;
-    };
-    const needsGuardianLink =
-      membership.roleName === RoleName.PLAYER
-        ? await computeNeedsGuardianLink(user._id.toString(), teamDoc._id.toString())
-        : false;
-
-    sessionTeam = {
-      id: teamDoc._id.toString(),
-      name: teamDoc.name,
-      sport: teamDoc.sport,
-      season: teamDoc.season,
-      role: membership.roleName,
-      ...(membership.roleName === RoleName.PLAYER ? { needsGuardianLink } : {})
-    };
-  }
-
-  return {
-    user: {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      email_verified: user.email_verified,
-      avatar: user.avatar,
-      dateOfBirth: user.dateOfBirth,
-    },
-    ...(sessionTeam ? { team: sessionTeam } : {}),
-    token,
-  };
+  return issueAuthTokens({
+    user: mapUserPayload(user),
+    team: sessionTeam,
+    platform,
+    deviceLabel,
+  });
 };
 
-export const verifyEmail = async (code: string, email: string): Promise<IAuthResponse> => {
+export const verifyEmail = async (
+  code: string,
+  email: string,
+  context: AuthContextInput = {},
+): Promise<IAuthResponse & { _refreshRawToken?: string }> => {
+  const { platform = 'web', deviceLabel } = context;
   // Find user by email
   const user = await UserModel.findOne({ email });
   if (!user) {
@@ -247,23 +260,11 @@ export const verifyEmail = async (code: string, email: string): Promise<IAuthRes
   // Delete token
   await TokenModel.deleteOne({ _id: tokenDoc._id });
 
-  // Generate new JWT with updated email_verified status
-  const jwtToken = await genAccessToken(updatedUser._id, {
-    email: updatedUser.email,
-    email_verified: updatedUser.email_verified,
+  return issueAuthTokens({
+    user: mapUserPayload(updatedUser),
+    platform,
+    deviceLabel,
   });
-
-  return {
-    user: {
-      id: updatedUser._id,
-      name: updatedUser.name,
-      email: updatedUser.email,
-      email_verified: updatedUser.email_verified,
-      avatar: updatedUser.avatar,
-      dateOfBirth: updatedUser.dateOfBirth,
-    },
-    token: jwtToken,
-  };
 };
 
 export const resendVerificationEmail = async (userIdOrEmail?: string, email?: string): Promise<void> => {
@@ -373,6 +374,8 @@ export const resetPassword = async (token: string, newPassword: string): Promise
     password: hashedPassword,
   });
 
+  await revokeAllForUser(tokenDoc.user.toString());
+
   // Delete all reset tokens for this user
   await TokenModel.deleteMany({
     user: tokenDoc.user,
@@ -402,6 +405,8 @@ export const changePassword = async (
 
   const hashedPassword = await bcrypt.hash(newPassword, 10);
   await UserModel.findByIdAndUpdate(userId, { password: hashedPassword });
+
+  await revokeAllForUser(userId);
 
   await TokenModel.deleteMany({
     user: userId,
@@ -512,6 +517,93 @@ export const setActiveTeam = async (userId: string, teamId: string) => {
     role: userRole.roleName,
     ...(userRole.roleName === RoleName.PLAYER ? { needsGuardianLink } : {})
   };
+};
+
+export const refreshAccessToken = async (
+  rawRefreshToken: string,
+  platform: RefreshPlatform = 'web',
+): Promise<AuthTokenBundle & { _refreshRawToken?: string }> => {
+  if (!config.auth.v2Enabled) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Refresh tokens are not enabled');
+  }
+
+  const rotation = await rotateRefreshSession(rawRefreshToken);
+  const user = await UserModel.findById(rotation.userId);
+
+  if (!user) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'User not found');
+  }
+
+  const userRecord = await UserModel.findById(user._id).select('activeTeamId');
+  const sessionTeam = await resolveSessionTeam(
+    user._id.toString(),
+    userRecord?.activeTeamId?.toString(),
+  );
+  const { accessToken, expiresIn } = await genAccessTokenFromUser(user._id.toString(), {
+    email: user.email,
+    email_verified: user.email_verified,
+  });
+
+  const response: AuthTokenBundle = {
+    user: mapUserPayload(user),
+    ...(sessionTeam ? { team: sessionTeam } : {}),
+    token: accessToken,
+    accessToken,
+    expiresIn,
+  };
+
+  if (platform !== 'web') {
+    response.refreshToken = rotation.rawToken;
+  }
+
+  return {
+    ...response,
+    _refreshRawToken: rotation.rawToken,
+  };
+};
+
+export const logout = async (rawRefreshToken?: string): Promise<void> => {
+  if (!rawRefreshToken) {
+    return;
+  }
+
+  await revokeSessionByToken(rawRefreshToken);
+};
+
+export const logoutAll = async (userId: string): Promise<void> => {
+  await revokeAllForUser(userId);
+};
+
+export const getSessions = async (userId: string) => {
+  return listActiveSessionsForUser(userId);
+};
+
+export const upgradeSession = async (
+  userId: string,
+  context: AuthContextInput = {},
+): Promise<AuthTokenBundle & { _refreshRawToken?: string }> => {
+  if (!config.auth.v2Enabled) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Session upgrade is not enabled');
+  }
+
+  const user = await UserModel.findById(userId);
+
+  if (!user) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'User not found');
+  }
+
+  const userRecord = await UserModel.findById(user._id).select('activeTeamId');
+  const sessionTeam = await resolveSessionTeam(
+    user._id.toString(),
+    userRecord?.activeTeamId?.toString(),
+  );
+
+  return issueAuthTokens({
+    user: mapUserPayload(user),
+    team: sessionTeam,
+    platform: context.platform ?? 'web',
+    deviceLabel: context.deviceLabel,
+  });
 };
 
 

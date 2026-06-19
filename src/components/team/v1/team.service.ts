@@ -10,6 +10,7 @@ import logger from '@core/utils/logger';
 import { ITeam } from './team.interface';
 import { GuardianLink } from '@components/guardianLink/v1/guardianLink.model';
 import { GuardianLinkStatus } from '@components/guardianLink/v1/guardianLink.interface';
+import UserModel from '@components/user/v1/user.model';
 
 interface ICreateTeamInput {
   name: string;
@@ -45,6 +46,7 @@ interface ITeamResponse {
   color?: string;
   logoPath?: string;
   coverImagePath?: string;
+  role?: RoleName;
   createdBy: string;
   settings: {
     allowPlayerInvites: boolean;
@@ -125,6 +127,8 @@ export const createTeam = async (
     joinedAt: new Date()
   });
 
+  await UserModel.findByIdAndUpdate(userId, { activeTeamId: team._id });
+
   logger.info(`Team created: ${team._id} by user ${userId}`);
 
   return {
@@ -135,6 +139,7 @@ export const createTeam = async (
     color: team.color,
     logoPath: team.logoPath,
     coverImagePath: team.coverImagePath,
+    role: RoleName.COACH,
     createdBy: team.createdBy.toString(),
     settings: team.settings,
     createdAt: team.createdAt,

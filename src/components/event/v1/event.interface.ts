@@ -27,6 +27,8 @@ export interface IEvent extends Document {
   start: Date;
   end?: Date | null;
   location?: string;
+  locationUrl?: string;
+  images?: string[];
   createdBy: Types.ObjectId;
   recurrence?: RecurrenceRule;
   createdAt: Date;

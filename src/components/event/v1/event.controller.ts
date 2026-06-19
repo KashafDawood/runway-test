@@ -6,6 +6,7 @@ import * as eventService from './event.service';
 import * as rsvpService from './rsvp.service';
 import * as attendanceService from './attendance.service';
 import { postSystemMessage } from '@components/teamChat/v1/systemMessage.service';
+import { buildEventSystemMessagePayload } from '@components/teamChat/v1/systemMessagePayload.util';
 import { SystemEventKind } from '@components/teamChat/v1/teamChat.interface';
 import { EventType } from './event.interface';
 import { Team } from '@components/team/v1/team.model';
@@ -35,7 +36,10 @@ export const createEvent = asyncWrapper(async (req: RequestWithContext, res: Res
     start?: string;
     end?: string | null;
     location?: string;
+    locationUrl?: string;
     recurrence?: { frequency: string; interval: number; endDate?: string; count?: number };
+    images?: string[];
+    uploadedImagePaths?: string[];
   };
 
   if (!userId) {
@@ -52,6 +56,7 @@ export const createEvent = asyncWrapper(async (req: RequestWithContext, res: Res
     start: body.start != null ? new Date(body.start) : undefined,
     end: body.end != null ? new Date(body.end) : null,
     location: body.location,
+    locationUrl: body.locationUrl,
     recurrence: body.recurrence
       ? {
           frequency: body.recurrence.frequency as 'daily' | 'weekly' | 'monthly',
@@ -59,13 +64,24 @@ export const createEvent = asyncWrapper(async (req: RequestWithContext, res: Res
           endDate: body.recurrence.endDate ? new Date(body.recurrence.endDate) : undefined,
           count: body.recurrence.count
         }
-      : undefined
+      : undefined,
+    images: body.images,
+    uploadedImagePaths: body.uploadedImagePaths
   });
 
   try {
+    let attendingCount: number | undefined;
+    try {
+      const rsvpSummary = await rsvpService.getRsvpSummary(event.id, teamId);
+      attendingCount = rsvpSummary.attending;
+    } catch {
+      attendingCount = undefined;
+    }
     await postSystemMessage(teamId, SystemEventKind.EVENT_CREATED, {
-      eventId: event.id,
-      title: event.title
+      ...buildEventSystemMessagePayload(event, {
+        actorName: req.user?.name,
+        attendingCount
+      })
     });
   } catch (err) {
     logger.error('Failed to post system message for event created', err);
@@ -126,6 +142,7 @@ export const getEvent = asyncWrapper(async (req: RequestWithContext, res: Respon
     end: normalized.end,
     description: normalized.description,
     location: normalized.location,
+    locationUrl: normalized.locationUrl,
     isRecurring: normalized.isRecurring,
     teamId: normalized.teamId
   };
@@ -165,7 +182,10 @@ export const updateEvent = asyncWrapper(async (req: RequestWithContext, res: Res
     start?: string;
     end?: string;
     location?: string;
+    locationUrl?: string;
     recurrence?: { frequency: string; interval: number; endDate?: string; count?: number } | null;
+    images?: string[];
+    uploadedImagePaths?: string[];
   };
 
   if (!teamId || !eventId) {
@@ -181,6 +201,7 @@ export const updateEvent = asyncWrapper(async (req: RequestWithContext, res: Res
       ? (body.end != null ? new Date(body.end) : null)
       : undefined,
     location: body.location,
+    locationUrl: body.locationUrl,
     recurrence:
       body.recurrence === null
         ? null
@@ -191,13 +212,24 @@ export const updateEvent = asyncWrapper(async (req: RequestWithContext, res: Res
               endDate: body.recurrence.endDate ? new Date(body.recurrence.endDate) : undefined,
               count: body.recurrence.count
             }
-          : undefined
+          : undefined,
+    images: body.images,
+    uploadedImagePaths: body.uploadedImagePaths
   });
 
   try {
+    let attendingCount: number | undefined;
+    try {
+      const rsvpSummary = await rsvpService.getRsvpSummary(event.id, teamId);
+      attendingCount = rsvpSummary.attending;
+    } catch {
+      attendingCount = undefined;
+    }
     await postSystemMessage(teamId, SystemEventKind.EVENT_UPDATED, {
-      eventId: event.id,
-      title: event.title
+      ...buildEventSystemMessagePayload(event, {
+        actorName: req.user?.name,
+        attendingCount
+      })
     });
   } catch (err) {
     logger.error('Failed to post system message for event updated', err);

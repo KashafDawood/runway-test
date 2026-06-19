@@ -27,6 +27,20 @@ export async function getActiveTeamMemberUserIds(teamId: string): Promise<string
 }
 
 /**
+ * Active coach and assistant coach user IDs for a team.
+ */
+export async function getActiveTeamManagerUserIds(teamId: string): Promise<string[]> {
+  const roles = await UserRole.find({
+    teamId: new Types.ObjectId(teamId),
+    status: UserRoleStatus.ACTIVE,
+    roleName: { $in: [RoleName.COACH, RoleName.ASSISTANT_COACH] },
+  })
+    .select('userId')
+    .lean();
+  return roles.map((r) => r.userId.toString());
+}
+
+/**
  * Active team members eligible for chat notifications.
  * Excludes unlinked guardians and minor players without an approved guardian link.
  */
@@ -504,6 +518,72 @@ export async function notifyGuardianLink(params: {
     });
   } catch (err) {
     logger.error('notifyGuardianLink delivery failed', { userId: recipientUserId, status, err });
+  }
+}
+
+/**
+ * Notify coaches and assistant coaches when a user accepts an invite and approval is needed.
+ */
+export async function notifyJoinRequestPending(params: {
+  teamId: string;
+  teamName: string;
+  inviteId: string;
+  memberName: string;
+  memberRole: string;
+  excludeUserId?: string;
+}): Promise<void> {
+  const { teamId, teamName, inviteId, memberName, memberRole, excludeUserId } = params;
+  const managerIds = await getActiveTeamManagerUserIds(teamId);
+  const recipients = excludeUserId
+    ? managerIds.filter((id) => id !== excludeUserId)
+    : managerIds;
+  const manageUrl = notificationUrl.team.manage(teamId);
+
+  for (const uid of recipients) {
+    try {
+      await deliverToUser({
+        userId: uid,
+        type: NotificationType.JOIN_REQUEST_PENDING,
+        title: `Join request: ${memberName}`,
+        body: `${memberName} accepted your invite as ${memberRole} and is waiting for your approval.`,
+        data: { type: 'join_request_pending', teamId, inviteId },
+        url: manageUrl,
+        teamId,
+        inviteId,
+      });
+    } catch (err) {
+      logger.error('notifyJoinRequestPending delivery failed', { userId: uid, err });
+    }
+  }
+}
+
+/**
+ * Notify coaches and assistant coaches when an approved minor player still needs a guardian link.
+ */
+export async function notifyMinorNeedsGuardianLink(params: {
+  teamId: string;
+  teamName: string;
+  playerName: string;
+  playerUserId: string;
+}): Promise<void> {
+  const { teamId, teamName, playerName, playerUserId } = params;
+  const managerIds = await getActiveTeamManagerUserIds(teamId);
+  const manageUrl = notificationUrl.team.manage(teamId);
+
+  for (const uid of managerIds) {
+    try {
+      await deliverToUser({
+        userId: uid,
+        type: NotificationType.MINOR_NEEDS_GUARDIAN_LINK,
+        title: `Guardian link needed: ${playerName}`,
+        body: `${playerName} is a minor on ${teamName} and needs a guardian linked.`,
+        data: { type: 'minor_needs_guardian_link', teamId, playerUserId },
+        url: manageUrl,
+        teamId,
+      });
+    } catch (err) {
+      logger.error('notifyMinorNeedsGuardianLink delivery failed', { userId: uid, err });
+    }
   }
 }
 
