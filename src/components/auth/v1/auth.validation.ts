@@ -105,3 +105,15 @@ export const changePasswordValidation: ValidationSchema = {
   }),
 };
 
+export const refreshValidation: ValidationSchema = {
+  body: Joi.object().keys({
+    refreshToken: Joi.string().optional(),
+  }),
+};
+
+export const logoutValidation: ValidationSchema = {
+  body: Joi.object().keys({
+    refreshToken: Joi.string().optional(),
+  }),
+};
+

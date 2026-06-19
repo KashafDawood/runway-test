@@ -36,6 +36,25 @@ router.post(
   authController.resendVerificationEmail
 );
 
+router.post(
+  '/refresh',
+  validate(authValidation.refreshValidation),
+  authController.refresh,
+);
+
+router.post(
+  '/logout',
+  optionalVerifyToken,
+  validate(authValidation.logoutValidation),
+  authController.logout,
+);
+
+router.post('/logout-all', verifyToken, authController.logoutAll);
+
+router.get('/sessions', verifyToken, authController.getSessions);
+
+router.post('/upgrade-session', verifyToken, authController.upgradeSession);
+
 // Protected routes
 
 router.get('/me', verifyToken, authController.getMe);

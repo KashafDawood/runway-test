@@ -25,6 +25,13 @@ const envsSchema = Joi.object()
     // JWT Configuration
     JWT_SECRET: Joi.string().required(),
     JWT_EXPIRES_IN: Joi.string().default('30d'),
+    JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
+    JWT_REFRESH_EXPIRES_IN: Joi.string().default('90d'),
+    REFRESH_COOKIE_NAME: Joi.string().default('runway_refresh'),
+    REFRESH_COOKIE_SECURE: Joi.string().valid('true', 'false').default('false'),
+    REFRESH_COOKIE_SAME_SITE: Joi.string().valid('strict', 'lax', 'none').default('lax'),
+    AUTH_REFRESH_TOKEN_BODY: Joi.string().valid('true', 'false').default('true'),
+    AUTH_V2_ENABLED: Joi.string().valid('true', 'false').default('true'),
     // Mail Configuration
     ADMIN_EMAIL: Joi.string().email(),
     MAIL_HOST: Joi.string().default('smtp.resend.com'),
@@ -76,6 +83,7 @@ export default {
   jwt: {
     secret: envVars.JWT_SECRET,
     expiresIn: envVars.JWT_EXPIRES_IN,
+    accessExpiresIn: envVars.JWT_ACCESS_EXPIRES_IN,
   },
   mail: {
     host: envVars.MAIL_HOST,
@@ -88,6 +96,15 @@ export default {
   auth: {
     useExternalService: envVars.USE_EXTERNAL_AUTH === 'true',
     externalServiceUrl: envVars.AUTH_SERVICE_URL,
+    v2Enabled: envVars.AUTH_V2_ENABLED === 'true',
+    refreshExpiresIn: envVars.JWT_REFRESH_EXPIRES_IN,
+    refreshTokenBodyEnabled: envVars.AUTH_REFRESH_TOKEN_BODY === 'true',
+    refreshCookie: {
+      name: envVars.REFRESH_COOKIE_NAME,
+      secure: envVars.REFRESH_COOKIE_SECURE === 'true' || envVars.NODE_ENV === 'production',
+      sameSite: envVars.REFRESH_COOKIE_SAME_SITE as 'strict' | 'lax' | 'none',
+      path: '/api/v1/auth',
+    },
   },
   firebase: {
     projectId: envVars.FIREBASE_PROJECT_ID,
