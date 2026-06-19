@@ -1,5 +1,6 @@
 import * as admin from 'firebase-admin';
 import path from 'path';
+import fs from 'fs';
 import config from '@config/config';
 import logger from '@core/utils/logger';
 
@@ -31,7 +32,7 @@ export function getFirebaseApp(): admin.app.App | null {
     initOptions.storageBucket = getStorageBucketName();
   }
 
-  if (serviceAccountPath) {
+  if (serviceAccountPath && fs.existsSync(serviceAccountPath)) {
     try {
       app = admin.initializeApp({
         credential: admin.credential.cert(serviceAccountPath),
@@ -41,13 +42,16 @@ export function getFirebaseApp(): admin.app.App | null {
       return app;
     } catch (err) {
       logger.warn('Firebase init failed (service account file):', err);
-      return null;
     }
+  } else if (serviceAccountPath) {
+    logger.debug(`Firebase service account file not found at ${serviceAccountPath}; trying env credentials fallback`);
   }
 
   if (hasEnvCreds) {
     try {
-      const privateKey = (fb.privateKey || '').replace(/\\n/g, '\n');
+      const privateKey = (fb.privateKey || '')
+        .replace(/^["']|["']$/g, '') // remove surrounding quotes if any
+        .replace(/\\n/g, '\n');
       app = admin.initializeApp({
         credential: admin.credential.cert({
           projectId: fb.projectId,
